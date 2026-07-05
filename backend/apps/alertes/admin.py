@@ -1,0 +1,15 @@
+from django.contrib import admin
+
+from .models import Alerte, AlerteProximite
+
+
+@admin.register(Alerte)
+class AlerteAdmin(admin.ModelAdmin):
+    list_display = ['id', 'incident', 'statut', 'traitee_par', 'date_creation']
+    list_filter = ['statut']
+
+
+@admin.register(AlerteProximite)
+class AlerteProximiteAdmin(admin.ModelAdmin):
+    list_display = ['id', 'boitier', 'zone', 'distance_metres', 'notifiee', 'date_creation']
+    list_filter = ['notifiee']
