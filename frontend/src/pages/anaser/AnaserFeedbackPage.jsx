@@ -32,7 +32,7 @@ export function AnaserFeedbackPage() {
     <div className="container py-4">
       <h1 className="h4 mb-4">Feedback ANASER</h1>
 
-      <form onSubmit={handleSubmit} className="row g-2 mb-4">
+      <form onSubmit={handleSubmit} className="surface-card p-3 row g-2 mb-4">
         <div className="col-md-3">
           <select
             className="form-select"
@@ -69,26 +69,28 @@ export function AnaserFeedbackPage() {
         </div>
       </form>
 
-      <table className="table table-striped">
-        <thead>
-          <tr>
-            <th>Zone</th>
-            <th>Commentaire</th>
-            <th>Action prévue</th>
-            <th>Statut</th>
-          </tr>
-        </thead>
-        <tbody>
-          {feedbacks.map((f) => (
-            <tr key={f.id}>
-              <td>{f.zone}</td>
-              <td>{f.commentaire}</td>
-              <td>{f.action_prevue}</td>
-              <td>{f.statut}</td>
+      <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
+        <table className="table table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Zone</th>
+              <th>Commentaire</th>
+              <th>Action prévue</th>
+              <th>Statut</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {feedbacks.map((f) => (
+              <tr key={f.id}>
+                <td>{f.zone}</td>
+                <td>{f.commentaire}</td>
+                <td>{f.action_prevue}</td>
+                <td><span className="badge badge-statut-neutre">{f.statut}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

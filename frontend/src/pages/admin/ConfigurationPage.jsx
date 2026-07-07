@@ -41,7 +41,7 @@ export function ConfigurationPage() {
     <div className="container py-4" style={{ maxWidth: 600 }}>
       <h1 className="h4 mb-4">Configuration système</h1>
       {message && <div className="alert alert-success">{message}</div>}
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="surface-card p-4">
         {CHAMPS.map((champ) => (
           <div className="mb-3" key={champ.nom}>
             <label className="form-label">{champ.label}</label>

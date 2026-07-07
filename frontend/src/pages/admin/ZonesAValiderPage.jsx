@@ -42,39 +42,41 @@ export function ZonesAValiderPage() {
         </button>
       </div>
 
-      <table className="table table-striped">
-        <thead>
-          <tr>
-            <th>Zone</th>
-            <th>Niveau de danger</th>
-            <th>Incidents</th>
-            <th>Statut</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {zones.map((zone) => (
-            <tr key={zone.id}>
-              <td>{zone.nom || `Zone #${zone.id}`}</td>
-              <td><Badge valeur={zone.niveau_danger} /></td>
-              <td>{zone.nombre_incidents}</td>
-              <td><Badge valeur={zone.statut_validation} /></td>
-              <td>
-                {zone.statut_validation === 'en_attente' && (
-                  <>
-                    <button className="btn btn-sm btn-success me-2" onClick={() => handleValider(zone.id, 'validee')}>
-                      Valider
-                    </button>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleValider(zone.id, 'rejetee')}>
-                      Rejeter
-                    </button>
-                  </>
-                )}
-              </td>
+      <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
+        <table className="table table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Zone</th>
+              <th>Niveau de danger</th>
+              <th>Incidents</th>
+              <th>Statut</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {zones.map((zone) => (
+              <tr key={zone.id}>
+                <td>{zone.nom || `Zone #${zone.id}`}</td>
+                <td><Badge valeur={zone.niveau_danger} /></td>
+                <td className="font-mono">{zone.nombre_incidents}</td>
+                <td><Badge valeur={zone.statut_validation} /></td>
+                <td>
+                  {zone.statut_validation === 'en_attente' && (
+                    <>
+                      <button className="btn btn-sm btn-success me-2" onClick={() => handleValider(zone.id, 'validee')}>
+                        Valider
+                      </button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleValider(zone.id, 'rejetee')}>
+                        Rejeter
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

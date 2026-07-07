@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/oswald": "^5.2.8",
+    "@fontsource/public-sans": "^5.2.7",
     "axios": "^1.18.1",
     "bootstrap": "^5.3.8",
     "jwt-decode": "^4.0.0",

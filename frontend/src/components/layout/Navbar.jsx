@@ -11,8 +11,11 @@ export function Navbar() {
   }
 
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark bg-dark px-3">
-      <Link className="navbar-brand" to="/">SafeRoad</Link>
+    <nav className="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-3">
+      <Link className="navbar-brand brand-mark" to="/">
+        <span className="dot" aria-hidden="true"></span>
+        SafeRoad
+      </Link>
       <div className="navbar-nav me-auto">
         <Link className="nav-link" to="/carte">Carte</Link>
         <Link className="nav-link" to="/statistiques">Statistiques</Link>
@@ -29,7 +32,7 @@ export function Navbar() {
             Déconnexion ({utilisateur.email})
           </button>
         ) : (
-          <Link className="btn btn-outline-light btn-sm" to="/login">Connexion</Link>
+          <Link className="btn btn-accent btn-sm" to="/login">Connexion</Link>
         )}
       </div>
     </nav>

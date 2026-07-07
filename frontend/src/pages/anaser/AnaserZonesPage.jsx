@@ -17,27 +17,31 @@ export function AnaserZonesPage() {
   return (
     <div className="container-fluid py-4">
       <h1 className="h4 mb-3">Zones accidentogènes identifiées</h1>
-      <CarteZones zones={zones} />
-      <table className="table table-striped mt-4">
-        <thead>
-          <tr>
-            <th>Zone</th>
-            <th>Niveau de danger</th>
-            <th>Incidents</th>
-            <th>Statut</th>
-          </tr>
-        </thead>
-        <tbody>
-          {zones.map((zone) => (
-            <tr key={zone.id}>
-              <td>{zone.nom || `Zone #${zone.id}`}</td>
-              <td><Badge valeur={zone.niveau_danger} /></td>
-              <td>{zone.nombre_incidents}</td>
-              <td><Badge valeur={zone.statut_validation} /></td>
+      <div className="surface-card p-2 mb-4" style={{ overflow: 'hidden' }}>
+        <CarteZones zones={zones} />
+      </div>
+      <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
+        <table className="table table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Zone</th>
+              <th>Niveau de danger</th>
+              <th>Incidents</th>
+              <th>Statut</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {zones.map((zone) => (
+              <tr key={zone.id}>
+                <td>{zone.nom || `Zone #${zone.id}`}</td>
+                <td><Badge valeur={zone.niveau_danger} /></td>
+                <td className="font-mono">{zone.nombre_incidents}</td>
+                <td><Badge valeur={zone.statut_validation} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

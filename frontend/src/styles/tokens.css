@@ -1,0 +1,37 @@
+:root {
+  /* Ancrage */
+  --ink: #0b1e3d;
+  --ink-soft: #4a5a75;
+  --paper: #f4f6f9;
+  --surface: #ffffff;
+  --line: #dde3ec;
+
+  /* Accent haute-visibilité (gilet de sécurité) */
+  --hivis: #c9e731;
+  --hivis-ink: #17330a;
+
+  /* Sémantique — niveaux de danger, distincts de l'accent */
+  --danger-faible: #2f9e5b;
+  --danger-faible-bg: #e3f5ea;
+  --danger-moyen: #c98420;
+  --danger-moyen-bg: #f8ecd8;
+  --danger-eleve: #c05a1f;
+  --danger-eleve-bg: #f8e2d3;
+  --danger-critique: #b23a2e;
+  --danger-critique-bg: #f7dfdb;
+
+  /* Statuts */
+  --statut-neutre: #4a5a75;
+  --statut-neutre-bg: #e7eaf0;
+
+  --shadow-sm: 0 1px 2px rgba(11, 30, 61, 0.06);
+  --shadow-md: 0 6px 20px rgba(11, 30, 61, 0.10);
+
+  --font-display: "Oswald", "Arial Narrow", sans-serif;
+  --font-body: "Public Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+}

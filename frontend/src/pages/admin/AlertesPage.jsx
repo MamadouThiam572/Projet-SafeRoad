@@ -25,32 +25,34 @@ export function AlertesPage() {
   return (
     <div className="container py-4">
       <h1 className="h4 mb-4">Alertes critiques</h1>
-      <table className="table table-striped">
-        <thead>
-          <tr>
-            <th>Incident</th>
-            <th>Statut</th>
-            <th>Créée le</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {alertes.map((alerte) => (
-            <tr key={alerte.id}>
-              <td>#{alerte.incident}</td>
-              <td><Badge valeur={alerte.statut} /></td>
-              <td>{new Date(alerte.date_creation).toLocaleString('fr-FR')}</td>
-              <td>
-                {alerte.statut !== 'traitee' && (
-                  <button className="btn btn-sm btn-success" onClick={() => handleTraiter(alerte.id)}>
-                    Marquer comme traitée
-                  </button>
-                )}
-              </td>
+      <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
+        <table className="table table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Incident</th>
+              <th>Statut</th>
+              <th>Créée le</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {alertes.map((alerte) => (
+              <tr key={alerte.id}>
+                <td className="font-mono">#{alerte.incident}</td>
+                <td><Badge valeur={alerte.statut} /></td>
+                <td className="font-mono">{new Date(alerte.date_creation).toLocaleString('fr-FR')}</td>
+                <td>
+                  {alerte.statut !== 'traitee' && (
+                    <button className="btn btn-sm btn-success" onClick={() => handleTraiter(alerte.id)}>
+                      Marquer comme traitée
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

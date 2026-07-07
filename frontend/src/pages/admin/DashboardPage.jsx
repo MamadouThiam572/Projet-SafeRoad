@@ -30,29 +30,23 @@ export function DashboardPage() {
       <h1 className="h4 mb-4">Tableau de bord administrateur</h1>
       <div className="row g-3 mb-4">
         <div className="col-md-4">
-          <div className="card text-bg-primary">
-            <div className="card-body">
-              <h2 className="h6">Incidents (historique statistiques)</h2>
-              <p className="display-6 mb-0">{totalIncidents}</p>
-            </div>
+          <div className="stat-tile" style={{ '--stripe': 'var(--ink)' }}>
+            <div className="label">Incidents enregistrés</div>
+            <div className="value">{totalIncidents}</div>
           </div>
         </div>
         <div className="col-md-4">
-          <div className="card text-bg-warning">
-            <div className="card-body">
-              <h2 className="h6">Zones en attente de validation</h2>
-              <p className="display-6 mb-0">{zonesEnAttente.length}</p>
-              <Link to="/admin/zones" className="stretched-link small">Voir les zones</Link>
-            </div>
+          <div className="stat-tile" style={{ '--stripe': 'var(--danger-moyen)' }}>
+            <div className="label">Zones en attente de validation</div>
+            <div className="value">{zonesEnAttente.length}</div>
+            <Link to="/admin/zones">Voir les zones →</Link>
           </div>
         </div>
         <div className="col-md-4">
-          <div className="card text-bg-danger">
-            <div className="card-body">
-              <h2 className="h6">Alertes nouvelles</h2>
-              <p className="display-6 mb-0">{alertesNouvelles.length}</p>
-              <Link to="/admin/alertes" className="stretched-link small">Voir les alertes</Link>
-            </div>
+          <div className="stat-tile" style={{ '--stripe': 'var(--danger-critique)' }}>
+            <div className="label">Alertes nouvelles</div>
+            <div className="value">{alertesNouvelles.length}</div>
+            <Link to="/admin/alertes">Voir les alertes →</Link>
           </div>
         </div>
       </div>

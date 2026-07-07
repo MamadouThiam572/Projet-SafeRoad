@@ -42,7 +42,7 @@ export function BoitiersListPage() {
         </div>
       )}
 
-      <form onSubmit={handleCreer} className="row g-2 mb-4">
+      <form onSubmit={handleCreer} className="surface-card p-3 row g-2 mb-4">
         <div className="col-md-3">
           <input
             className="form-control"
@@ -72,32 +72,34 @@ export function BoitiersListPage() {
         </div>
       </form>
 
-      <table className="table table-striped">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Propriétaire</th>
-            <th>Immatriculation</th>
-            <th>Statut</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {boitiers.map((b) => (
-            <tr key={b.id}>
-              <td><code>{b.id}</code></td>
-              <td>{b.proprietaire_nom}</td>
-              <td>{b.numero_immatriculation}</td>
-              <td>{b.statut}</td>
-              <td>
-                <button className="btn btn-sm btn-outline-secondary" onClick={() => handleRegenererCle(b.id)}>
-                  Régénérer la clé
-                </button>
-              </td>
+      <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
+        <table className="table table-striped mb-0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Propriétaire</th>
+              <th>Immatriculation</th>
+              <th>Statut</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {boitiers.map((b) => (
+              <tr key={b.id}>
+                <td><code>{b.id}</code></td>
+                <td>{b.proprietaire_nom}</td>
+                <td>{b.numero_immatriculation}</td>
+                <td><span className="badge badge-statut-neutre">{b.statut}</span></td>
+                <td>
+                  <button className="btn btn-sm btn-outline-secondary" onClick={() => handleRegenererCle(b.id)}>
+                    Régénérer la clé
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

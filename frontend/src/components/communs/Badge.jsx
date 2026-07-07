@@ -1,17 +1,17 @@
-const VARIANTES = {
-  faible: 'success',
-  moyen: 'warning',
-  eleve: 'dark',
-  critique: 'danger',
-  en_attente: 'secondary',
-  validee: 'success',
-  rejetee: 'danger',
-  nouvelle: 'danger',
-  vue: 'warning',
-  traitee: 'success',
+const CLASSES = {
+  faible: 'badge-danger-faible',
+  moyen: 'badge-danger-moyen',
+  eleve: 'badge-danger-eleve',
+  critique: 'badge-danger-critique',
+  en_attente: 'badge-statut-neutre',
+  validee: 'badge-danger-faible',
+  rejetee: 'badge-danger-critique',
+  nouvelle: 'badge-danger-critique',
+  vue: 'badge-danger-moyen',
+  traitee: 'badge-danger-faible',
 }
 
 export function Badge({ valeur }) {
-  const variante = VARIANTES[valeur] || 'secondary'
-  return <span className={`badge bg-${variante}`}>{valeur}</span>
+  const classe = CLASSES[valeur] || 'badge-statut-neutre'
+  return <span className={`badge ${classe}`}>{valeur}</span>
 }
