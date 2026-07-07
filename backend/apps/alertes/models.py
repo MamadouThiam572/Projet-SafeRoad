@@ -28,12 +28,21 @@ class Alerte(models.Model):
 
 
 class AlerteProximite(models.Model):
+    class CanalLed(models.TextChoices):
+        VERT = 'vert', 'Vert'
+        JAUNE = 'jaune', 'Jaune'
+        ROUGE = 'rouge', 'Rouge'
+
     boitier = models.ForeignKey(Boitier, on_delete=models.CASCADE, related_name='alertes_proximite')
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='alertes_proximite')
     distance_metres = models.FloatField()
     latitude = models.FloatField()
     longitude = models.FloatField()
-    notifiee = models.BooleanField(default=False)
+    # Canaux déclenchés localement par le boîtier (LED/buzzer/message vocal DFPlayer), déterminés
+    # par le niveau_danger de la zone au moment de l'alerte — voir apps.alertes.utils.
+    canal_led = models.CharField(max_length=10, choices=CanalLed.choices, default=CanalLed.VERT)
+    canal_buzzer_declenche = models.BooleanField(default=False)
+    canal_audio_declenche = models.BooleanField(default=False)
     date_creation = models.DateTimeField(auto_now_add=True)
 
     class Meta:

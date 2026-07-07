@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.alertes.models import AlerteProximite
+from apps.alertes.utils import determiner_canaux_alerte
 from apps.configuration.models import ConfigurationSysteme
 from apps.core.permissions import EstAdministrateur, EstBoitier
 from apps.zones.models import Zone
@@ -69,6 +70,7 @@ class BoitierViewSet(viewsets.ModelViewSet):
                     distance_min = distance_metres
 
         alerte_proximite = False
+        canaux = determiner_canaux_alerte(zone_proche.niveau_danger if zone_proche else None)
         if zone_proche is not None:
             cooldown_debut = timezone.now() - timezone.timedelta(minutes=config.cooldown_alerte_proximite_minutes)
             deja_notifiee_recemment = AlerteProximite.objects.filter(
@@ -77,7 +79,7 @@ class BoitierViewSet(viewsets.ModelViewSet):
             if not deja_notifiee_recemment:
                 AlerteProximite.objects.create(
                     boitier=boitier, zone=zone_proche, distance_metres=distance_min,
-                    latitude=latitude, longitude=longitude, notifiee=True,
+                    latitude=latitude, longitude=longitude, **canaux,
                 )
                 alerte_proximite = True
 
@@ -85,4 +87,6 @@ class BoitierViewSet(viewsets.ModelViewSet):
             'alerte_proximite': alerte_proximite,
             'zone': str(zone_proche.id) if zone_proche else None,
             'distance_metres': distance_min,
+            'niveau_danger': zone_proche.niveau_danger if zone_proche else None,
+            **canaux,
         })

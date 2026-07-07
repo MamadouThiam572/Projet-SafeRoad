@@ -13,5 +13,8 @@ class AlerteSerializer(serializers.ModelSerializer):
 class AlerteProximiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = AlerteProximite
-        fields = '__all__'
+        fields = [
+            'id', 'boitier', 'zone', 'distance_metres', 'latitude', 'longitude',
+            'canal_led', 'canal_buzzer_declenche', 'canal_audio_declenche', 'date_creation',
+        ]
         read_only_fields = fields

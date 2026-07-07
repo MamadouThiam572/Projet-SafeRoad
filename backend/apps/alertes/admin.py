@@ -11,5 +11,5 @@ class AlerteAdmin(admin.ModelAdmin):
 
 @admin.register(AlerteProximite)
 class AlerteProximiteAdmin(admin.ModelAdmin):
-    list_display = ['id', 'boitier', 'zone', 'distance_metres', 'notifiee', 'date_creation']
-    list_filter = ['notifiee']
+    list_display = ['id', 'boitier', 'zone', 'distance_metres', 'canal_led', 'canal_buzzer_declenche', 'canal_audio_declenche', 'date_creation']
+    list_filter = ['canal_led']
