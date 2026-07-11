@@ -205,9 +205,8 @@ a:hover {
   padding: 0.42em 0.75em;
   border-radius: 999px;
 }
-.badge-danger-faible { background: var(--danger-faible-bg); color: var(--danger-faible); }
-.badge-danger-moyen { background: var(--danger-moyen-bg); color: var(--danger-moyen); }
-.badge-danger-eleve { background: var(--danger-eleve-bg); color: var(--danger-eleve); }
+.badge-danger-normale { background: var(--danger-faible-bg); color: var(--danger-faible); }
+.badge-danger-vigilance { background: var(--danger-moyen-bg); color: var(--danger-moyen); }
 .badge-danger-critique { background: var(--danger-critique-bg); color: var(--danger-critique); }
 .badge-statut-neutre { background: var(--statut-neutre-bg); color: var(--statut-neutre); }
 

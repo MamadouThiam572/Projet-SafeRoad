@@ -10,13 +10,11 @@
   --hivis: #c9e731;
   --hivis-ink: #17330a;
 
-  /* Sémantique — niveaux de danger, distincts de l'accent */
+  /* Sémantique — niveaux de danger (normale/vigilance/critique), distincts de l'accent */
   --danger-faible: #2f9e5b;
   --danger-faible-bg: #e3f5ea;
   --danger-moyen: #c98420;
   --danger-moyen-bg: #f8ecd8;
-  --danger-eleve: #c05a1f;
-  --danger-eleve-bg: #f8e2d3;
   --danger-critique: #b23a2e;
   --danger-critique-bg: #f7dfdb;
 

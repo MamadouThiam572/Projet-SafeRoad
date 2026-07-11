@@ -5,9 +5,8 @@ from apps.zones.models import Zone
 # même règle en local dès réception du niveau_danger ; le backend la rejoue ici uniquement pour
 # enregistrer un historique/audit côté admin, sans dépendre d'un retour du boîtier.
 _CANAL_LED_PAR_NIVEAU = {
-    Zone.NiveauDanger.FAIBLE: 'vert',
-    Zone.NiveauDanger.MOYEN: 'jaune',
-    Zone.NiveauDanger.ELEVE: 'jaune',
+    Zone.NiveauDanger.NORMALE: 'vert',
+    Zone.NiveauDanger.VIGILANCE: 'jaune',
     Zone.NiveauDanger.CRITIQUE: 'rouge',
 }
 

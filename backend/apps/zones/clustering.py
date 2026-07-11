@@ -13,11 +13,9 @@ RAYON_TERRE_METRES = 6371000
 def _niveau_danger(score_danger):
     if score_danger >= 15:
         return Zone.NiveauDanger.CRITIQUE
-    if score_danger >= 8:
-        return Zone.NiveauDanger.ELEVE
     if score_danger >= 4:
-        return Zone.NiveauDanger.MOYEN
-    return Zone.NiveauDanger.FAIBLE
+        return Zone.NiveauDanger.VIGILANCE
+    return Zone.NiveauDanger.NORMALE
 
 
 def generer_zones_depuis_incidents():

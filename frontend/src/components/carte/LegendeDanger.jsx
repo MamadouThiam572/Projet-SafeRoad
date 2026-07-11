@@ -1,6 +1,6 @@
 import { couleurNiveauDanger, libelleNiveauDanger } from '../../utils/niveauDangerColor'
 
-const NIVEAUX = ['faible', 'moyen', 'eleve', 'critique']
+const NIVEAUX = ['normale', 'vigilance', 'critique']
 
 export function LegendeDanger() {
   return (
