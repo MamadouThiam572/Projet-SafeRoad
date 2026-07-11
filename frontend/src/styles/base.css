@@ -1,0 +1,307 @@
+/* ---------- Fondations ---------- */
+
+body {
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  text-wrap: balance;
+  letter-spacing: 0.01em;
+}
+
+code, .font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--ink);
+}
+a:hover {
+  color: var(--hivis-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ---------- Bootstrap : boutons ---------- */
+
+.btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-hover-bg: #142a52;
+  --bs-btn-hover-border-color: #142a52;
+  --bs-btn-active-bg: #081428;
+  --bs-btn-active-border-color: #081428;
+  --bs-btn-disabled-bg: var(--ink);
+  --bs-btn-disabled-border-color: var(--ink);
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-hover-bg: var(--ink);
+  --bs-btn-hover-border-color: var(--ink);
+  --bs-btn-active-bg: var(--ink);
+  --bs-btn-active-border-color: var(--ink);
+}
+
+.btn-outline-secondary {
+  --bs-btn-color: var(--ink-soft);
+  --bs-btn-border-color: var(--line);
+  --bs-btn-hover-bg: var(--ink-soft);
+  --bs-btn-hover-border-color: var(--ink-soft);
+}
+
+.btn-outline-light {
+  --bs-btn-color: var(--paper);
+  --bs-btn-border-color: rgba(244, 246, 249, 0.4);
+  --bs-btn-hover-bg: var(--hivis);
+  --bs-btn-hover-color: var(--hivis-ink);
+  --bs-btn-hover-border-color: var(--hivis);
+}
+
+.btn-success {
+  --bs-btn-bg: var(--danger-faible);
+  --bs-btn-border-color: var(--danger-faible);
+  --bs-btn-hover-bg: #257c49;
+  --bs-btn-hover-border-color: #257c49;
+}
+
+.btn-danger {
+  --bs-btn-bg: var(--danger-critique);
+  --bs-btn-border-color: var(--danger-critique);
+  --bs-btn-hover-bg: #8f2f26;
+  --bs-btn-hover-border-color: #8f2f26;
+}
+
+.btn-accent {
+  background: var(--hivis);
+  border-color: var(--hivis);
+  color: var(--hivis-ink);
+  font-weight: 700;
+}
+.btn-accent:hover {
+  background: #b8d426;
+  border-color: #b8d426;
+  color: var(--hivis-ink);
+}
+
+/* ---------- Navbar ---------- */
+
+.navbar.bg-dark {
+  --bs-navbar-color: rgba(244, 246, 249, 0.75);
+  --bs-navbar-hover-color: #fff;
+  --bs-navbar-active-color: var(--hivis);
+  --bs-navbar-brand-color: #fff;
+  background: var(--ink) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 0.02em;
+  color: #fff !important;
+}
+.brand-mark .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hivis);
+  display: inline-block;
+}
+
+/* ---------- Cartes / conteneurs ---------- */
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.surface-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Tables ---------- */
+
+.table {
+  --bs-table-color: var(--ink);
+  --bs-table-striped-bg: #eef1f6;
+  font-size: 0.95rem;
+}
+.table thead th {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  border-bottom: 2px solid var(--line);
+  font-weight: 700;
+}
+.table td {
+  vertical-align: middle;
+}
+
+/* ---------- Alerts ---------- */
+
+.alert-danger {
+  background: var(--danger-critique-bg);
+  color: #6b241c;
+  border: 1px solid var(--danger-critique);
+}
+.alert-warning {
+  background: var(--danger-moyen-bg);
+  color: #6b4d10;
+  border: 1px solid var(--danger-moyen);
+}
+.alert-success {
+  background: var(--danger-faible-bg);
+  color: #1d5c37;
+  border: 1px solid var(--danger-faible);
+}
+
+/* ---------- Formulaires ---------- */
+
+.form-control, .form-select {
+  border-color: var(--line);
+  border-radius: var(--radius-sm);
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 0.2rem rgba(11, 30, 61, 0.12);
+}
+.form-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+/* ---------- Badges sémantiques (niveaux de danger / statuts) ---------- */
+
+.badge {
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.42em 0.75em;
+  border-radius: 999px;
+}
+.badge-danger-faible { background: var(--danger-faible-bg); color: var(--danger-faible); }
+.badge-danger-moyen { background: var(--danger-moyen-bg); color: var(--danger-moyen); }
+.badge-danger-eleve { background: var(--danger-eleve-bg); color: var(--danger-eleve); }
+.badge-danger-critique { background: var(--danger-critique-bg); color: var(--danger-critique); }
+.badge-statut-neutre { background: var(--statut-neutre-bg); color: var(--statut-neutre); }
+
+/* ---------- Hero (accueil) ---------- */
+
+.hero {
+  background: linear-gradient(160deg, var(--ink) 0%, #142a52 100%);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  padding: 64px 40px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -10% -60% auto;
+  width: 60%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 231, 49, 0.18), transparent 70%);
+}
+.hero .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hivis);
+}
+.hero h1 {
+  color: #fff;
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  margin: 12px 0 16px;
+}
+.hero p {
+  color: rgba(244, 246, 249, 0.82);
+  font-size: 1.1rem;
+  max-width: 56ch;
+}
+
+/* ---------- Stat tiles (dashboard) ---------- */
+
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  border-left: 4px solid var(--stripe, var(--ink));
+}
+.stat-tile .label {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat-tile .value {
+  font-family: var(--font-mono);
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+  margin-top: 6px;
+}
+.stat-tile a {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* ---------- Légende carte ---------- */
+
+.legende-danger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.legende-danger .item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legende-danger .puce {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.leaflet-container {
+  border-radius: calc(var(--radius-md) - 4px);
+  font-family: var(--font-body);
+}
