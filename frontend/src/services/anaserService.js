@@ -7,3 +7,7 @@ export function listerFeedbacksAnaser() {
 export function creerFeedbackAnaser(donnees) {
   return api.post('/alertes-anaser/', donnees).then((res) => res.data)
 }
+
+export function mettreAJourFeedbackAnaser(id, statut) {
+  return api.patch(`/alertes-anaser/${id}/`, { statut }).then((res) => res.data)
+}

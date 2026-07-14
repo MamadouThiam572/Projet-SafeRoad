@@ -8,6 +8,9 @@ const CLASSES = {
   nouvelle: 'badge-danger-critique',
   vue: 'badge-danger-vigilance',
   traitee: 'badge-danger-normale',
+  soumise: 'badge-statut-neutre',
+  en_cours: 'badge-danger-vigilance',
+  realisee: 'badge-danger-normale',
 }
 
 export function Badge({ valeur }) {
