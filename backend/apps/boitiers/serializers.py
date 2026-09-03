@@ -4,12 +4,16 @@ from .models import Boitier, HistoriqueSync
 
 
 class BoitierSerializer(serializers.ModelSerializer):
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    region_libelle = serializers.CharField(source='get_region_display', read_only=True)
+
     class Meta:
         model = Boitier
         fields = [
             'id', 'proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation',
+            'region', 'region_libelle',
             'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
-            'statut', 'date_creation', 'date_maj',
+            'statut', 'statut_libelle', 'date_creation', 'date_maj',
         ]
         read_only_fields = ['id', 'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj']
 
@@ -17,7 +21,7 @@ class BoitierSerializer(serializers.ModelSerializer):
 class BoitierCreationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Boitier
-        fields = ['proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation', 'statut']
+        fields = ['proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation', 'region', 'statut']
 
 
 class PositionSerializer(serializers.Serializer):

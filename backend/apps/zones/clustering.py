@@ -3,6 +3,7 @@ from geopy.distance import geodesic
 from sklearn.cluster import DBSCAN
 
 from apps.configuration.models import ConfigurationSysteme
+from apps.core.geo import boite_englobante
 from apps.incidents.models import Incident
 
 from .models import Zone
@@ -58,8 +59,19 @@ def generer_zones_depuis_incidents():
         score_danger = nombre_incidents + 2 * nombre_critiques
         niveau_danger = _niveau_danger(score_danger)
 
+        # Pré-filtre bounding box (exploitable par un index B-tree sur latitude_centre/
+        # longitude_centre) avant le calcul géodésique précis mais coûteux : on ne
+        # calcule `geodesic()` que sur les quelques zones proches, plus sur toutes les
+        # zones actives à chaque cluster.
+        delta_latitude, delta_longitude = boite_englobante(latitude_centre, longitude_centre, config.rayon_clustering_metres)
+        zones_candidates = Zone.objects.filter(
+            actif=True,
+            latitude_centre__range=(latitude_centre - delta_latitude, latitude_centre + delta_latitude),
+            longitude_centre__range=(longitude_centre - delta_longitude, longitude_centre + delta_longitude),
+        )
+
         zone_existante = None
-        for zone in Zone.objects.filter(actif=True):
+        for zone in zones_candidates:
             distance_metres = geodesic(
                 (latitude_centre, longitude_centre), (zone.latitude_centre, zone.longitude_centre)
             ).meters

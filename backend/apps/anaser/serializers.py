@@ -4,6 +4,9 @@ from .models import AlerteAnaser
 
 
 class AlerteAnaserSerializer(serializers.ModelSerializer):
+    action_prevue_libelle = serializers.CharField(source='get_action_prevue_display', read_only=True)
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+
     class Meta:
         model = AlerteAnaser
         fields = '__all__'

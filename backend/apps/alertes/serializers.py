@@ -4,6 +4,8 @@ from .models import Alerte, AlerteProximite
 
 
 class AlerteSerializer(serializers.ModelSerializer):
+    statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+
     class Meta:
         model = Alerte
         fields = '__all__'

@@ -16,8 +16,8 @@ class Zone(ModeleHorodate):
         REJETEE = 'rejetee', 'Rejetée'
 
     nom = models.CharField(max_length=150, blank=True)
-    latitude_centre = models.FloatField()
-    longitude_centre = models.FloatField()
+    latitude_centre = models.FloatField(db_index=True)
+    longitude_centre = models.FloatField(db_index=True)
     rayon_metres = models.FloatField()
     nombre_incidents = models.PositiveIntegerField(default=0)
     score_danger = models.FloatField(default=0)
