@@ -3,8 +3,8 @@ import { Badge } from '../../components/communs/Badge'
 import { CarteZones } from '../../components/carte/CarteZones'
 import { EmptyState } from '../../components/communs/EmptyState'
 import { ErrorState } from '../../components/communs/ErrorState'
-import { Loader } from '../../components/communs/Loader'
 import { PageHeader } from '../../components/communs/PageHeader'
+import { SkeletonLignes } from '../../components/communs/Skeleton'
 import { useRequete } from '../../hooks/useRequete'
 import { listerZones } from '../../services/zonesService'
 
@@ -19,24 +19,27 @@ export function AnaserZonesPage() {
         description="Zones à risque détectées à partir des incidents, triées par score de danger décroissant."
       />
 
-      {chargement && <Loader />}
       {erreur && !chargement && <ErrorState onReessayer={rafraichir} />}
 
-      {zones && !chargement && !erreur && (
-        zones.length === 0 ? (
-          <div className="surface-card">
-            <EmptyState
-              icone="zone"
-              titre="Aucune zone détectée"
-              message="Aucune zone accidentogène n'a encore été identifiée."
-            />
-          </div>
-        ) : (
-          <>
+      {!erreur && !chargement && zones && zones.length === 0 && (
+        <div className="surface-card">
+          <EmptyState
+            icone="zone"
+            titre="Aucune zone détectée"
+            message="Aucune zone accidentogène n'a encore été identifiée."
+          />
+        </div>
+      )}
+
+      {!erreur && (chargement || (zones && zones.length > 0)) && (
+        <>
+          {!chargement && (
             <div className="surface-card p-2 mb-4" style={{ overflow: 'hidden' }}>
               <CarteZones zones={zones} />
             </div>
-            <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
+          )}
+          <div className="surface-card overflow-hidden">
+            <div style={{ overflowX: 'auto' }}>
               <table className="table table-striped mb-0">
                 <caption className="visually-hidden">Zones accidentogènes identifiées</caption>
                 <thead>
@@ -49,14 +52,14 @@ export function AnaserZonesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {zones.map((zone) => {
+                  {chargement ? <SkeletonLignes colonnes={5} lignes={4} /> : zones.map((zone) => {
                     const nom = zone.nom || `Zone #${zone.id}`
                     return (
                       <tr key={zone.id}>
                         <td>{nom}</td>
-                        <td><Badge valeur={zone.niveau_danger} /></td>
+                        <td><Badge valeur={zone.niveau_danger} libelle={zone.niveau_danger_libelle} /></td>
                         <td className="font-mono">{zone.nombre_incidents}</td>
-                        <td><Badge valeur={zone.statut_validation} /></td>
+                        <td><Badge valeur={zone.statut_validation} libelle={zone.statut_validation_libelle} /></td>
                         <td>
                           <Link
                             className="btn btn-sm btn-outline-secondary"
@@ -72,8 +75,8 @@ export function AnaserZonesPage() {
                 </tbody>
               </table>
             </div>
-          </>
-        )
+          </div>
+        </>
       )}
     </>
   )

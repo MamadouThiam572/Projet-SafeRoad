@@ -1,3 +1,33 @@
+@import "tailwindcss";
+
+/* Mode sombre piloté par une classe `.dark` sur <html> (pas seulement par la préférence
+   système) : permet un sélecteur de thème explicite en plus du défaut système — voir
+   Navbar/AdminLayout/AnaserLayout pour le contrôle, et tokens.css pour les valeurs. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/admin.css";
+@import "./styles/accueil.css";
+@import "./styles/auth.css";
+
 body {
   margin: 0;
+}
+
+/* Colonne pleine hauteur : permet aux pages qui le demandent (ex. .login-page) de
+   remplir exactement l'espace restant sous la navbar, quelle que soit sa hauteur
+   réelle (elle varie selon qu'elle tient sur une ou deux lignes) — sans valeur en
+   dur fragile face au responsive. */
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+#contenu-principal {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }

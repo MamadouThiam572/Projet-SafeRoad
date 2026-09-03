@@ -13,14 +13,15 @@
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/oswald": "^5.2.8",
     "@fontsource/public-sans": "^5.2.7",
+    "@tailwindcss/vite": "^4.3.3",
     "axios": "^1.18.1",
-    "bootstrap": "^5.3.8",
     "jwt-decode": "^4.0.0",
     "leaflet": "^1.9.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-leaflet": "^5.0.0",
-    "react-router-dom": "^7.18.1"
+    "react-router-dom": "^7.18.1",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

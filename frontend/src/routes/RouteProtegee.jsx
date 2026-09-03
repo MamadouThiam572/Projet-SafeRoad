@@ -1,11 +1,12 @@
 import { Navigate } from 'react-router-dom'
+import { Loader } from '../components/communs/Loader'
 import { useAuth } from '../hooks/useAuth'
 
 export function RouteProtegee({ rolesAutorises, children }) {
   const { estAuthentifie, utilisateur, chargementInitial } = useAuth()
 
   if (chargementInitial) {
-    return <div className="text-center p-5">Chargement...</div>
+    return <Loader />
   }
   if (!estAuthentifie) {
     return <Navigate to="/login" replace />

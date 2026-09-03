@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /anaser
+Disallow: /login
+
+Sitemap: https://saferoad.sn/sitemap.xml

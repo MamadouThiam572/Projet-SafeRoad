@@ -41,6 +41,11 @@ export function Footer() {
 
         <div className="footer-bas">
           <span>© {annee} SafeRoad — Prévention routière · Sénégal</span>
+          <nav aria-label="Informations légales" style={{ display: 'flex', gap: '1rem' }}>
+            <Link to="/confidentialite">Confidentialité</Link>
+            <Link to="/mentions-legales">Mentions légales</Link>
+            <Link to="/accessibilite">Accessibilité</Link>
+          </nav>
           <span className="font-mono">Boîtier ESP32 · Détection temps réel</span>
         </div>
       </div>

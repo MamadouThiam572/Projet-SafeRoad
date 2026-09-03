@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Icone } from './Icone'
 
-export function Panneau({ icone, titre, compteur, lien, children }) {
+export function Panneau({ icone, titre, compteur, note, lien, children }) {
   return (
     <section className="panneau">
       <div className="panneau__entete">
@@ -10,6 +10,7 @@ export function Panneau({ icone, titre, compteur, lien, children }) {
           {titre}
           <span className="panneau__compteur">{compteur}</span>
         </h2>
+        {note && <span className="panneau__note">{note}</span>}
         {lien && (
           <Link className="panneau__lien" to={lien}>
             Tout voir <Icone nom="fleche" taille={14} />

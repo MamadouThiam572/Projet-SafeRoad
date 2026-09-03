@@ -1,11 +1,9 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Icone } from '../../components/communs/Icone'
-import {
-  IllustrationBoitier,
-  IllustrationCarte,
-  IllustrationRoute,
-} from '../../components/illustrations/Illustrations'
+import { useMetaPage } from '../../hooks/useMetaPage'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
+import { listerZones } from '../../services/zonesService'
 
 const ETAPES = [
   {
@@ -13,29 +11,22 @@ const ETAPES = [
     etiquette: 'À BORD',
     titre: 'Détection embarquée',
     texte:
-      "Le boîtier ESP32 — accéléromètre, radar et GPS — repère chocs, freinages brusques et collisions en temps réel, au moment même où ils se produisent.",
+      "Le boîtier ESP32 — accéléromètre, radar et GPS — repère chocs, freinages brusques et collisions en temps réel.",
   },
   {
     n: '2',
     etiquette: 'EN ROUTE',
     titre: 'Transmission sécurisée',
     texte:
-      "Les données remontent au serveur, ou patientent sur carte SD hors couverture réseau, puis se synchronisent automatiquement dès le retour du signal.",
+      "Les données remontent au serveur, ou patientent sur carte SD hors réseau, puis se synchronisent dès le retour du signal.",
   },
   {
     n: '3',
     etiquette: 'SUR LA CARTE',
     titre: 'Zones à risque révélées',
     texte:
-      "Les incidents récurrents forment des zones accidentogènes, validées par un administrateur, puis publiées pour alerter conducteurs et autorités.",
+      "Les incidents récurrents forment des zones accidentogènes, validées par un administrateur, puis publiées.",
   },
-]
-
-const CAPTEURS = [
-  { fort: 'Accéléromètre', suite: '— détecte chocs et freinages brusques' },
-  { fort: 'Radar', suite: "— mesure les distances et la vitesse relative" },
-  { fort: 'GPS', suite: '— localise chaque événement au mètre près' },
-  { fort: 'Carte SD', suite: '— aucune donnée perdue, même hors réseau' },
 ]
 
 const BENEFICES = [
@@ -49,44 +40,38 @@ const BENEFICES = [
     icone: 'cloche',
     stripe: 'var(--hivis)',
     titre: 'Alertes de proximité',
-    texte: "LED, buzzer et signal audio préviennent le conducteur à l'approche d'un point noir, selon son niveau de danger.",
+    texte: "LED, buzzer et signal audio préviennent le conducteur à l'approche d'un point noir.",
   },
   {
     icone: 'boitier',
     stripe: 'var(--danger-moyen)',
     titre: "Fonctionne hors-ligne",
-    texte: "Aucune donnée perdue : le boîtier enregistre en local et rattrape la synchronisation dès qu'il retrouve le réseau.",
-  },
-  {
-    icone: 'incidents',
-    stripe: 'var(--ink)',
-    titre: 'Trois niveaux de danger',
-    texte: "Zones normales, sous vigilance ou critiques : une lecture claire et immédiate du risque, sans ambiguïté.",
+    texte: "Aucune donnée perdue : le boîtier enregistre en local et rattrape la synchronisation.",
   },
   {
     icone: 'utilisateur',
     stripe: 'var(--danger-faible)',
     titre: "Validé par l'humain",
-    texte: "Chaque zone est confirmée par un administrateur avant publication : pas de fausse alerte, uniquement du fiable.",
+    texte: "Chaque zone est confirmée par un administrateur avant publication : pas de fausse alerte.",
   },
-  {
-    icone: 'tableau',
-    stripe: 'var(--statut-neutre)',
-    titre: 'Statistiques ouvertes',
-    texte: "Données agrégées et anonymisées, accessibles à tous, pour comprendre et prévenir à l'échelle du territoire.",
-  },
-]
-
-const IMPACT = [
-  { chiffre: '< 1 s', desc: "Entre l'impact et sa détection à bord" },
-  { chiffre: '3', desc: 'Canaux d’alerte : lumineux, sonore, vocal' },
-  { chiffre: '100 %', desc: 'Des trajets couverts, même sans réseau' },
-  { chiffre: '24/7', desc: 'Surveillance continue des zones à risque' },
 ]
 
 export function AccueilPage() {
+  useMetaPage({
+    titre: "Accueil",
+    description:
+      "SafeRoad détecte les accidents à la source et cartographie les zones accidentogènes du Sénégal en temps réel, grâce à un boîtier embarqué.",
+    chemin: '/',
+  })
   const mouvementReduit = usePrefersReducedMotion()
   const anime = !mouvementReduit
+  const [nombreZones, setNombreZones] = useState(null)
+
+  useEffect(() => {
+    // Discret et non bloquant : un chiffre réel s'il arrive à temps, sinon la page reste
+    // telle quelle — jamais de nombre inventé, jamais de spinner qui retarde le hero.
+    listerZones().then((zones) => setNombreZones(zones.length)).catch(() => {})
+  }, [])
 
   return (
     <div className="container py-5 accueil">
@@ -103,9 +88,10 @@ export function AccueilPage() {
               <span className="surligne">avant qu'il n'arrive.</span>
             </h1>
             <p className="accroche">
-              Derrière chaque point sur la carte, une route, un trajet, une vie. SafeRoad relie un boîtier
-              embarqué de détection à une plateforme temps réel pour révéler les zones accidentogènes
-              et protéger celles et ceux qui les traversent chaque jour.
+              SafeRoad combine un dispositif embarqué, la géolocalisation
+               et l'analyse intelligente des données pour détecter les situations 
+               à risque, identifier les zones accidentogènes et alerter les conducteurs
+                avant qu'un accident ne survienne.
             </p>
             <div className="hero-actions">
               <Link to="/carte" className="btn btn-accent btn-lg">
@@ -116,70 +102,46 @@ export function AccueilPage() {
               </Link>
             </div>
             <div className="hero-chips">
+              {nombreZones !== null && (
+                <span className="hero-chip">
+                  <Icone nom="zone" taille={16} />
+                  <strong className="font-mono">{nombreZones}</strong> zone{nombreZones > 1 ? 's' : ''} déjà cartographiée{nombreZones > 1 ? 's' : ''}
+                </span>
+              )}
               <span className="hero-chip"><Icone nom="boitier" taille={16} /> Boîtier ESP32</span>
-              <span className="hero-chip"><Icone nom="zone" taille={16} /> Détection GPS temps réel</span>
               <span className="hero-chip"><Icone nom="cloche" taille={16} /> Alerte de proximité</span>
             </div>
           </div>
 
-          <div className="hero-radar-col">
-            <IllustrationCarte className="hero-illu" anime={anime} />
-          </div>
         </div>
       </section>
 
-      {/* ---------- POURQUOI (émotion) ---------- */}
+      {/* ---------- POURQUOI (émotion, brève) ---------- */}
       <section className="section-accueil pourquoi">
-        <div className="row g-4 align-items-center">
-          <div className="col-lg-5">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
+          <div className="lg:col-span-5">
             <div className="section-eyebrow" style={{ color: 'var(--hivis)' }}>Notre raison d'être</div>
             <p className="lede">
               Un accident n'est presque jamais une surprise. C'est souvent <em>le même virage</em>, le
-              <em> même croisement</em>, encore et encore.
+              <em> même croisement</em>,<em>les mêmes comportements à risque</em> encore et encore.
             </p>
           </div>
-          <div className="col-lg-7">
+          <div className="lg:col-span-7">
             <p className="texte">
-              Sur nos routes, certains points concentrent les drames année après année. Le plus souvent,
-              on ne les identifie qu'après coup. SafeRoad inverse la logique : en écoutant ce que vivent
-              réellement les véhicules, la plateforme fait remonter ces zones{' '}
-              <strong style={{ color: '#fff' }}>avant</strong> qu'un nouveau drame ne s'y ajoute — pour que
-              la prévention devienne enfin concrète, mesurable et partagée par tous.
+              SafeRoad analyse ces signaux pour identifier les risques et alerter 
+               <strong style={{ color: '#fff' }}>avant</strong> qu'un accident 
+              ne survienne.
             </p>
           </div>
         </div>
       </section>
 
-      {/* ---------- SPLIT : le boîtier ---------- */}
-      <section className="section-accueil split">
-        <div className="split-texte">
-          <div className="section-eyebrow">À bord</div>
-          <h2 className="section-titre">Un capteur qui ne dort jamais</h2>
-          <p className="section-intro">
-            Discret sous le tableau de bord, le boîtier SafeRoad écoute en permanence le comportement du
-            véhicule et transforme chaque secousse en information exploitable.
-          </p>
-          <ul className="split-liste">
-            {CAPTEURS.map((c) => (
-              <li key={c.fort}>
-                <span className="coche"><Icone nom="coche" taille={15} /></span>
-                <span><strong>{c.fort}</strong> {c.suite}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="split-illu">
-          <IllustrationBoitier anime={anime} />
-        </div>
-      </section>
-
-      {/* ---------- PARCOURS ---------- */}
+      {/* ---------- COMMENT ÇA MARCHE ---------- */}
       <section className="section-accueil">
         <div className="section-eyebrow">Comment ça marche</div>
         <h2 className="section-titre">Du choc détecté à la zone révélée</h2>
         <p className="section-intro mb-4">
-          Trois étapes, du capteur embarqué jusqu'à la carte publique — une chaîne pensée pour ne rien
-          perdre, même loin de tout réseau.
+          Trois étapes, du capteur embarqué jusqu'à la carte publique.
         </p>
         <div className="flow">
           {ETAPES.map((etape) => (
@@ -190,27 +152,6 @@ export function AccueilPage() {
               <p>{etape.texte}</p>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* ---------- SPLIT : la carte ---------- */}
-      <section className="section-accueil split inverse">
-        <div className="split-texte">
-          <div className="section-eyebrow">Sur la carte</div>
-          <h2 className="section-titre">Le danger devient visible</h2>
-          <p className="section-intro">
-            Les incidents isolés ne disent rien ; regroupés, ils dessinent des points noirs. SafeRoad les
-            classe en trois niveaux de danger et les publie sur une carte que chacun peut consulter, du
-            conducteur à l'autorité de tutelle.
-          </p>
-          <div className="hero-actions" style={{ marginTop: 24 }}>
-            <Link to="/carte" className="btn btn-primary">
-              Explorer la carte <Icone nom="fleche" taille={16} />
-            </Link>
-          </div>
-        </div>
-        <div className="split-illu">
-          <IllustrationRoute anime={anime} />
         </div>
       </section>
 
@@ -228,20 +169,6 @@ export function AccueilPage() {
               <span className="ico"><Icone nom={b.icone} taille={22} /></span>
               <h3>{b.titre}</h3>
               <p>{b.texte}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ---------- IMPACT ---------- */}
-      <section className="section-accueil">
-        <div className="section-eyebrow" style={{ color: 'var(--danger-critique)' }}>Ce que garantit la plateforme</div>
-        <h2 className="section-titre mb-4">La technologie, au service de chaque trajet</h2>
-        <div className="impact">
-          {IMPACT.map((i) => (
-            <div className="impact-item" key={i.desc}>
-              <div className="chiffre">{i.chiffre}</div>
-              <div className="desc">{i.desc}</div>
             </div>
           ))}
         </div>
