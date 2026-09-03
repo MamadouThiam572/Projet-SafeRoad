@@ -1,3 +1,9 @@
+/* =========================================================================
+   Design tokens SafeRoad — source unique pour le thème Tailwind (@theme)
+   et pour les usages qui ont besoin d'une variable CSS brute (styles SVG
+   inline des illustrations, `style={{ '--stripe': ... }}` des tuiles/badges).
+   ========================================================================= */
+
 :root {
   /* Ancrage */
   --ink: #0b1e3d;
@@ -6,17 +12,32 @@
   --surface: #ffffff;
   --line: #dde3ec;
 
-  /* Accent haute-visibilité (gilet de sécurité) */
+  /* Bleu nuit de marque, constant quel que soit le thème (sidebar, navbar, hero, footer
+     sont des surfaces délibérément sombres dans les deux modes) — distinct de --ink, qui
+     lui bascule avec le thème clair/sombre puisqu'il porte le sens « couleur de texte ». */
+  --navy: #0b1e3d;
+
+  /* Couleur primaire du système (liens actifs, boutons, anneau de focus, KPI) — le bleu
+     nuit de marque plutôt qu'un indigo générique, pour que l'espace de gestion reste
+     identifiable comme SafeRoad. Distincte de --navy : elle doit rester lisible en fond
+     ET en texte sur les deux thèmes, donc elle s'éclaircit en sombre (--navy, lui, reste
+     fixe car réservé aux surfaces déjà sombres par construction — sidebar, hero). */
+  --primary: #0b1e3d;
+  --primary-ink: #ffffff;
+
+  /* Accent haute-visibilité (gilet de sécurité) — réservé aux emphases rares et fortes
+     (alerte critique, urgence), jamais une couleur d'action courante : au-delà de
+     quelques usages, le jaune-vert fatigue et perd sa fonction d'alerte. */
   --hivis: #c9e731;
   --hivis-ink: #17330a;
 
-  /* Sémantique — niveaux de danger, distincts de l'accent */
-  --danger-faible: #2f9e5b;
+  /* Sémantique — niveaux de danger (normale/vigilance/critique), distincts de l'accent.
+     Textes foncés pour clore le contraste WCAG AA (4.5:1) sur leurs fonds tintés — voir
+     l'étude de correction : les teintes d'origine (#2f9e5b / #c98420) passaient sous 3:1. */
+  --danger-faible: #1f7a44;
   --danger-faible-bg: #e3f5ea;
-  --danger-moyen: #c98420;
+  --danger-moyen: #8f5c0e;
   --danger-moyen-bg: #f8ecd8;
-  --danger-eleve: #c05a1f;
-  --danger-eleve-bg: #f8e2d3;
   --danger-critique: #b23a2e;
   --danger-critique-bg: #f7dfdb;
 
@@ -34,4 +55,84 @@
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 20px;
+}
+
+/* ---------- Mode sombre ---------- */
+/* `.dark` est posé sur <html> par le sélecteur de thème (voir Navbar/AdminLayout/
+   AnaserLayout) — persiste dans localStorage, initialisé sur la préférence système.
+   Comme la quasi-totalité de admin.css/accueil.css/base.css est déjà écrite contre ces
+   tokens plutôt qu'en couleurs en dur, redéfinir seulement ces variables suffit à
+   rethémer l'application entière, sans dupliquer une seule règle. */
+.dark {
+  --ink: #eef1f6;
+  --ink-soft: #a9b4c6;
+  --paper: #0b111e;
+  --surface: #131b2e;
+  --line: #253150;
+
+  /* Éclairci pour rester lisible en fond ET en texte sur les surfaces sombres — le navy
+     brut (#0b1e3d) y serait quasi invisible (c'est exactement le bug de contraste corrigé
+     plus tôt sur les titres du hero, appliqué ici en amont plutôt qu'en correctif). */
+  --primary: #6d93e0;
+  --primary-ink: #0b1e3d;
+
+  --danger-faible: #4ade80;
+  --danger-faible-bg: #0f2a1c;
+  --danger-moyen: #eab308;
+  --danger-moyen-bg: #2f2408;
+  --danger-critique: #f87171;
+  --danger-critique-bg: #3a1614;
+
+  --statut-neutre: #a9b4c6;
+  --statut-neutre-bg: #1b2439;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.55);
+}
+
+/* Thème Tailwind v4 (CSS-first, @theme) : mappe les tokens ci-dessus sur les
+   namespaces Tailwind (--color-*, --font-*, --radius-*, --shadow-*) pour que
+   `bg-ink`, `text-hivis`, `font-display`, `rounded-md`, `shadow-sm`, etc.
+   soient disponibles comme utilitaires natifs, alignés sur l'identité SafeRoad. */
+@theme {
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+
+  --color-navy: var(--navy);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+
+  --color-hivis: var(--hivis);
+  --color-hivis-ink: var(--hivis-ink);
+
+  --color-danger-faible: var(--danger-faible);
+  --color-danger-faible-bg: var(--danger-faible-bg);
+  --color-danger-moyen: var(--danger-moyen);
+  --color-danger-moyen-bg: var(--danger-moyen-bg);
+  --color-danger-critique: var(--danger-critique);
+  --color-danger-critique-bg: var(--danger-critique-bg);
+
+  --color-statut-neutre: var(--statut-neutre);
+  --color-statut-neutre-bg: var(--statut-neutre-bg);
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+}
+
+/* Skeletons de chargement (tableaux/KPI de l'espace admin/ANASER) — désactivée sous
+   prefers-reduced-motion, voir base.css. */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }

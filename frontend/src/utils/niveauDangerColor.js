@@ -1,15 +1,13 @@
 // Alignées sur les tokens sémantiques de src/styles/tokens.css (--danger-*)
 const COULEURS = {
-  faible: '#2f9e5b',
-  moyen: '#c98420',
-  eleve: '#c05a1f',
+  normale: '#2f9e5b',
+  vigilance: '#c98420',
   critique: '#b23a2e',
 }
 
 const LIBELLES = {
-  faible: 'Faible',
-  moyen: 'Moyen',
-  eleve: 'Élevé',
+  normale: 'Normale',
+  vigilance: 'Vigilance',
   critique: 'Critique',
 }
 

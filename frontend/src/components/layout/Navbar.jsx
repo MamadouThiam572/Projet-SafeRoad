@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { ThemeToggle } from '../communs/ThemeToggle'
 
 export function Navbar() {
   const { estAuthentifie, utilisateur, deconnecter } = useAuth()
@@ -11,7 +12,7 @@ export function Navbar() {
   }
 
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-3">
+    <nav className="navbar navbar-dark px-3 py-3">
       <Link className="navbar-brand brand-mark" to="/">
         <span className="dot" aria-hidden="true"></span>
         SafeRoad
@@ -26,7 +27,8 @@ export function Navbar() {
           <Link className="nav-link" to="/anaser/dashboard">Espace ANASER</Link>
         )}
       </div>
-      <div className="navbar-nav">
+      <div className="navbar-nav items-center gap-1">
+        <ThemeToggle sur="sombre" />
         {estAuthentifie ? (
           <button className="btn btn-outline-light btn-sm" onClick={handleDeconnexion}>
             Déconnexion ({utilisateur.email})

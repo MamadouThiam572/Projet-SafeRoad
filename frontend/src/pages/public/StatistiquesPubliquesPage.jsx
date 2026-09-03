@@ -1,53 +1,64 @@
 import { useEffect, useState } from 'react'
+import { ErrorState } from '../../components/communs/ErrorState'
 import { Loader } from '../../components/communs/Loader'
+import { StatTile } from '../../components/communs/StatTile'
+import { useMetaPage } from '../../hooks/useMetaPage'
 import { statistiquesPubliques } from '../../services/statistiquesService'
 
 export function StatistiquesPubliquesPage() {
-  const [statistiques, setStatistiques] = useState([])
+  useMetaPage({
+    titre: 'Statistiques publiques',
+    description: "Incidents, zones actives et tendances des 30 derniers jours — données agrégées et anonymisées.",
+    chemin: '/statistiques',
+  })
+  const [statistiques, setStatistiques] = useState(null)
   const [chargement, setChargement] = useState(true)
+  const [erreur, setErreur] = useState(null)
 
-  useEffect(() => {
-    statistiquesPubliques().then(setStatistiques).finally(() => setChargement(false))
-  }, [])
+  function charger() {
+    setChargement(true)
+    setErreur(null)
+    statistiquesPubliques()
+      .then(setStatistiques)
+      .catch(() => setErreur("Impossible de charger les statistiques. Vérifiez votre connexion et réessayez."))
+      .finally(() => setChargement(false))
+  }
+
+  useEffect(charger, [])
 
   if (chargement) return <Loader />
 
-  const totalIncidents = statistiques.reduce((acc, s) => acc + s.nombre_incidents, 0)
-  const totalCritiques = statistiques.reduce((acc, s) => acc + s.nombre_incidents_critiques, 0)
-  const dernieresZonesActives = statistiques.length ? statistiques[statistiques.length - 1].nombre_zones_actives : 0
+  const totalIncidents = statistiques?.reduce((acc, s) => acc + s.nombre_incidents, 0) ?? 0
+  const totalCritiques = statistiques?.reduce((acc, s) => acc + s.nombre_incidents_critiques, 0) ?? 0
+  const dernieresZonesActives = statistiques?.length ? statistiques[statistiques.length - 1].nombre_zones_actives : 0
 
   return (
     <div className="container py-4">
       <h1 className="h4 mb-1">Statistiques publiques</h1>
       <p style={{ color: 'var(--ink-soft)' }}>30 derniers jours, données agrégées et anonymisées</p>
+      {statistiques && statistiques.length > 0 && (
+        <p className="font-mono" style={{ fontSize: '0.8rem', color: 'var(--ink-soft)' }}>
+          Dernière journée disponible : {statistiques[statistiques.length - 1].date}
+        </p>
+      )}
 
-      {statistiques.length === 0 ? (
+      {erreur && <ErrorState message={erreur} onReessayer={charger} />}
+
+      {!erreur && statistiques?.length === 0 && (
         <p style={{ color: 'var(--ink-soft)' }}>Aucune statistique disponible pour le moment.</p>
-      ) : (
+      )}
+
+      {!erreur && statistiques && statistiques.length > 0 && (
         <>
-          <div className="row g-3 mb-4">
-            <div className="col-md-4">
-              <div className="stat-tile" style={{ '--stripe': 'var(--ink)' }}>
-                <div className="label">Incidents sur la période</div>
-                <div className="value">{totalIncidents}</div>
-              </div>
-            </div>
-            <div className="col-md-4">
-              <div className="stat-tile" style={{ '--stripe': 'var(--danger-critique)' }}>
-                <div className="label">Dont critiques</div>
-                <div className="value">{totalCritiques}</div>
-              </div>
-            </div>
-            <div className="col-md-4">
-              <div className="stat-tile" style={{ '--stripe': 'var(--danger-moyen)' }}>
-                <div className="label">Zones actives (dernier jour)</div>
-                <div className="value">{dernieresZonesActives}</div>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-3">
+            <StatTile label="Incidents sur la période" valeur={totalIncidents} icone="incidents" stripe="var(--ink)" />
+            <StatTile label="Dont critiques" valeur={totalCritiques} icone="alerte" stripe="var(--danger-critique)" />
+            <StatTile label="Zones actives (dernier jour)" valeur={dernieresZonesActives} icone="zone" stripe="var(--danger-moyen)" />
           </div>
 
           <div className="surface-card p-3" style={{ overflowX: 'auto' }}>
             <table className="table table-striped mb-0">
+              <caption className="visually-hidden">Statistiques quotidiennes des 30 derniers jours</caption>
               <thead>
                 <tr>
                   <th>Date</th>

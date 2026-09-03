@@ -1,0 +1,59 @@
+@layer components {
+  .login-page {
+    /* Remplit exactement l'espace restant sous la navbar (voir #contenu-principal
+       dans index.css) : pas de scroll, quelle que soit la hauteur réelle de la navbar. */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: clamp(12px, 2vw, 24px) 0;
+    background:
+      radial-gradient(circle at 18% 74%, rgba(201, 231, 49, 0.16), transparent 27%),
+      linear-gradient(135deg, #087f78 0%, #089c8e 52%, #16b9a5 100%);
+  }
+
+  .login-layout {
+    display: grid;
+    grid-template-columns: 400px minmax(340px, 380px);
+    align-items: center;
+    justify-content: center;
+    gap: clamp(20px, 3vw, 48px);
+    max-height: 100%;
+  }
+
+  .login-card {
+    max-width: 380px;
+    box-sizing: border-box;
+    justify-self: start;
+    transform: none;
+  }
+
+  .login-portrait {
+    position: relative;
+    height: min(520px, 100%);
+    align-self: stretch;
+    overflow: hidden;
+  }
+  .login-avatar {
+    position: absolute;
+    /* Le fichier contient une large marge transparente : on l'agrandit pour que
+       la personne occupe réellement la colonne, sans encadré supplémentaire. */
+    width: 1000px;
+    max-width: none;
+    height: auto;
+    /* Collé en haut du cadre : seul le bas (marge transparente / pieds) est rogné
+       par overflow:hidden sur .login-portrait, jamais le haut du corps. */
+    top: 0;
+    left: 58%;
+    transform: translateX(-50%);
+    filter: contrast(1.04) saturate(1.05) drop-shadow(0 14px 18px rgba(4, 66, 63, 0.22));
+  }
+
+  @media (max-width: 820px) {
+    .login-layout { grid-template-columns: minmax(0, 420px); }
+    .login-card { justify-self: center; transform: none; }
+    .login-portrait { display: none; }
+  }
+}
