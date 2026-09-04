@@ -11,6 +11,11 @@ class ConfigurationSysteme(models.Model):
     rayon_alerte_proximite_metres = models.FloatField(default=1000.0)
     intervalle_sync_secondes = models.PositiveIntegerField(default=60, help_text="Informatif pour le firmware")
     cooldown_alerte_proximite_minutes = models.PositiveIntegerField(default=15)
+    duree_grace_regeneration_cle_heures = models.PositiveIntegerField(
+        default=24,
+        help_text="Durée pendant laquelle l'ancienne clé API d'un boîtier reste valide après régénération, "
+                   "le temps de reconfigurer le dispositif sur le terrain.",
+    )
     date_maj = models.DateTimeField(auto_now=True)
     modifie_par = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 

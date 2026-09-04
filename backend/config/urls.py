@@ -16,16 +16,23 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
+api_v1 = [
+    path('', include('apps.comptes.urls')),
+    path('', include('apps.boitiers.urls')),
+    path('', include('apps.incidents.urls')),
+    path('', include('apps.zones.urls')),
+    path('', include('apps.alertes.urls')),
+    path('', include('apps.anaser.urls')),
+    path('', include('apps.notifications.urls')),
+    path('', include('apps.statistiques.urls')),
+    path('', include('apps.configuration.urls')),
+    path('schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='docs'),
+]
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('apps.comptes.urls')),
-    path('api/', include('apps.boitiers.urls')),
-    path('api/', include('apps.incidents.urls')),
-    path('api/', include('apps.zones.urls')),
-    path('api/', include('apps.alertes.urls')),
-    path('api/', include('apps.anaser.urls')),
-    path('api/', include('apps.notifications.urls')),
-    path('api/', include('apps.statistiques.urls')),
-    path('api/', include('apps.configuration.urls')),
+    path('api/v1/', include(api_v1)),
 ]

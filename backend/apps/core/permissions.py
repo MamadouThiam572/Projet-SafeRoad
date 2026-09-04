@@ -3,33 +3,51 @@ from rest_framework.permissions import BasePermission
 from apps.boitiers.models import Boitier
 
 
+def _a_pour_role(request, *roles):
+    return bool(
+        request.user
+        and request.user.is_authenticated
+        and getattr(request.user, 'role', None) in roles
+    )
+
+
 class EstBoitier(BasePermission):
     def has_permission(self, request, view):
         return isinstance(request.user, Boitier)
 
 
-class EstAdministrateur(BasePermission):
+class EstSuperAdministrateur(BasePermission):
+    """Portée nationale, privilèges supérieurs — notamment seul rôle habilité à gérer les
+    comptes (voir AdministrateurViewSet)."""
+
     def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', None) == 'admin'
-        )
+        return _a_pour_role(request, 'super_admin')
+
+
+class EstAdministrateurRegional(BasePermission):
+    """Administrateur régional seul (pas le super administrateur) — utile pour les vues qui
+    ne doivent jamais s'appliquer à un super administrateur."""
+
+    def has_permission(self, request, view):
+        return _a_pour_role(request, 'admin')
+
+
+class EstAdministrateur(BasePermission):
+    """Administrateur régional OU super administrateur — le super administrateur peut tout
+    ce qu'un administrateur régional peut, plus la gestion des comptes (EstSuperAdministrateur
+    seule sur AdministrateurViewSet)."""
+
+    def has_permission(self, request, view):
+        return _a_pour_role(request, 'admin', 'super_admin')
 
 
 class EstAnaser(BasePermission):
     def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', None) == 'anaser'
-        )
+        return _a_pour_role(request, 'anaser')
 
 
 class EstAdminOuAnaser(BasePermission):
+    """Administrateur régional, super administrateur, ou ANASER."""
+
     def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', None) in ('admin', 'anaser')
-        )
+        return _a_pour_role(request, 'admin', 'super_admin', 'anaser')

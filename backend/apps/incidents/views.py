@@ -1,4 +1,5 @@
 from rest_framework import mixins, viewsets
+from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -9,6 +10,13 @@ from apps.core.permissions import EstAdminOuAnaser, EstBoitier
 from .models import Incident
 from .serializers import IncidentIngestionSerializer, IncidentSerializer
 from .utils import calculer_gravite
+
+
+class IncidentCursorPagination(CursorPagination):
+    # Cursor plutôt que numéro de page : Incident grandit en continu (flux IoT), et un
+    # OFFSET sur une table sans cesse alimentée dégraderait la pagination par page.
+    page_size = 25
+    ordering = '-horodatage'
 
 
 class IngestionView(APIView):
@@ -65,3 +73,4 @@ class IncidentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     queryset = Incident.objects.all().select_related('boitier', 'zone')
     serializer_class = IncidentSerializer
     permission_classes = [EstAdminOuAnaser]
+    pagination_class = IncidentCursorPagination

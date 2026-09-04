@@ -13,6 +13,9 @@ class SafeRoadTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['role'] = user.role
         token['nom'] = user.nom
         token['prenom'] = user.prenom
+        # None pour un super administrateur (portée nationale) ou un compte ANASER —
+        # le frontend distingue déjà "pas de région" de "région vide" via cette valeur.
+        token['region'] = user.region
         return token
 
     def validate(self, attrs):
@@ -23,22 +26,51 @@ class SafeRoadTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['email'] = self.user.email
         data['nom'] = self.user.nom
         data['prenom'] = self.user.prenom
+        data['region'] = self.user.region
         return data
 
 
-class AdministrateurSerializer(serializers.ModelSerializer):
+class ValidationCoherenceRoleRegionMixin:
+    """Validation de la règle rôle/région (voir Administrateur.erreur_coherence_role_region)
+    au niveau serializer — c'est le point d'entrée réel de création/modification des comptes
+    (AdministrateurViewSet), le modèle ne validant pas automatiquement à la sauvegarde."""
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        role = attrs.get('role', getattr(self.instance, 'role', None) or Administrateur.Role.ADMIN)
+        region = attrs.get('region', getattr(self.instance, 'region', None))
+        erreur = Administrateur.erreur_coherence_role_region(role, region)
+        if erreur:
+            raise serializers.ValidationError({'region': erreur})
+        return attrs
+
+
+class AdministrateurSerializer(ValidationCoherenceRoleRegionMixin, serializers.ModelSerializer):
     class Meta:
         model = Administrateur
-        fields = ['id', 'email', 'nom', 'prenom', 'role', 'is_active', 'derniere_connexion', 'date_creation']
+        fields = ['id', 'email', 'nom', 'prenom', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
         read_only_fields = ['id', 'derniere_connexion', 'date_creation']
 
 
-class AdministrateurCreationSerializer(serializers.ModelSerializer):
+class ProfilSerializer(serializers.ModelSerializer):
+    """Profil « soi-même » (voir MoiView) : contrairement à AdministrateurSerializer
+    (gestion d'autres comptes, réservée au super administrateur via AdministrateurViewSet),
+    rôle, région et statut actif restent en lecture seule ici pour qu'un utilisateur ne
+    puisse jamais s'auto-élever de rôle, changer sa propre portée ou se réactiver via son
+    propre profil."""
+
+    class Meta:
+        model = Administrateur
+        fields = ['id', 'email', 'nom', 'prenom', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
+        read_only_fields = ['id', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
+
+
+class AdministrateurCreationSerializer(ValidationCoherenceRoleRegionMixin, serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = Administrateur
-        fields = ['id', 'email', 'nom', 'prenom', 'role', 'password']
+        fields = ['id', 'email', 'nom', 'prenom', 'role', 'region', 'password']
 
     def create(self, validated_data):
         password = validated_data.pop('password')

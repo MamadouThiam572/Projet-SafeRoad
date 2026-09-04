@@ -3,6 +3,7 @@ Django==6.0.6
 django-cors-headers==4.9.0
 djangorestframework==3.17.1
 djangorestframework_simplejwt==5.5.1
+drf-spectacular==0.28.0
 geographiclib==2.1
 geopy==2.4.1
 joblib==1.5.3

@@ -3,6 +3,7 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.core.pagination import PaginationListeGestion
 from apps.core.permissions import EstAdministrateur
 
 from .models import Alerte, AlerteProximite
@@ -13,6 +14,7 @@ class AlerteViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
     queryset = Alerte.objects.all().select_related('incident', 'traitee_par')
     serializer_class = AlerteSerializer
     permission_classes = [EstAdministrateur]
+    pagination_class = PaginationListeGestion
 
     @action(detail=True, methods=['patch'])
     def traiter(self, request, pk=None):

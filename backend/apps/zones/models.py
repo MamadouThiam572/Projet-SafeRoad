@@ -6,9 +6,8 @@ from apps.core.models import ModeleHorodate
 
 class Zone(ModeleHorodate):
     class NiveauDanger(models.TextChoices):
-        FAIBLE = 'faible', 'Faible'
-        MOYEN = 'moyen', 'Moyen'
-        ELEVE = 'eleve', 'Élevé'
+        NORMALE = 'normale', 'Normale'
+        VIGILANCE = 'vigilance', 'Vigilance'
         CRITIQUE = 'critique', 'Critique'
 
     class StatutValidation(models.TextChoices):
@@ -17,12 +16,12 @@ class Zone(ModeleHorodate):
         REJETEE = 'rejetee', 'Rejetée'
 
     nom = models.CharField(max_length=150, blank=True)
-    latitude_centre = models.FloatField()
-    longitude_centre = models.FloatField()
+    latitude_centre = models.FloatField(db_index=True)
+    longitude_centre = models.FloatField(db_index=True)
     rayon_metres = models.FloatField()
     nombre_incidents = models.PositiveIntegerField(default=0)
     score_danger = models.FloatField(default=0)
-    niveau_danger = models.CharField(max_length=10, choices=NiveauDanger.choices, default=NiveauDanger.FAIBLE)
+    niveau_danger = models.CharField(max_length=10, choices=NiveauDanger.choices, default=NiveauDanger.NORMALE)
     statut_validation = models.CharField(
         max_length=10, choices=StatutValidation.choices, default=StatutValidation.EN_ATTENTE
     )

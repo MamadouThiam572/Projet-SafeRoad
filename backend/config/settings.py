@@ -10,23 +10,33 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import secrets
 from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+# SECURITY WARNING: don't run with debug turned on in production!
+# Défaut à False (fail-safe) : le .env.example fixe DEBUG=True explicitement pour le
+# développement, donc inverser ce défaut ne change rien au parcours documenté dans le
+# README, et rend impossible un déploiement qui « oublie » de désactiver le debug.
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-3k0aq1g4mk-xo3fd!k7q%(*p*$4nej&(=dv8_ku!6lws(xv4@=')
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+# Aucune valeur de repli fixe : en dev, une clé aléatoire est générée à chaque démarrage
+# si absente (invalide les sessions/tokens existants au redémarrage, sans conséquence en
+# dev) ; hors DEBUG, l'absence de SECRET_KEY dans l'environnement est une erreur fatale.
+SECRET_KEY = config('SECRET_KEY', default='')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = secrets.token_urlsafe(64)
+    else:
+        raise ImproperlyConfigured("SECRET_KEY doit être défini via l'environnement hors DEBUG.")
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
@@ -42,6 +52,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+    'drf_spectacular',
     'corsheaders',
     'apps.core',
     'apps.comptes',
@@ -110,12 +122,32 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    # Pas de pagination globale par défaut : Zone/Boitier/Administrateur/Notification sont
+    # des listes bornées (dizaines à centaines d'entrées, gérées par des admins), et la
+    # carte publique a besoin du jeu complet de zones validées en un seul appel. Seule
+    # Incident (alimentée en continu par les boîtiers IoT) est réellement non bornée —
+    # elle a sa propre pagination, voir IncidentViewSet.pagination_class.
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_THROTTLE_RATES': {
+        # Login uniquement (apps.core.throttling.LoginRateThrottle) : par IP, pas par compte
+        # — un attaquant ne peut pas contourner la limite en changeant l'email essayé.
+        'login': '5/min',
+    },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'SafeRoad API',
+    'DESCRIPTION': "API de la plateforme de prévention routière SafeRoad (ANASER).",
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 CORS_ALLOWED_ORIGINS = config(
@@ -123,6 +155,31 @@ CORS_ALLOWED_ORIGINS = config(
     default='http://localhost:5173',
     cast=Csv(),
 )
+
+# Réglages actifs uniquement hors développement (DEBUG=False) : aucun de ces réglages
+# ne concerne le poste de dev (HTTP local), donc ce bloc ne change rien au parcours
+# `runserver` documenté dans le README.
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'root': {'handlers': ['console'], 'level': 'INFO'},
+    'loggers': {
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+        'apps': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
 
 
 # Password validation

@@ -1,9 +1,11 @@
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.core.cache_keys import CACHE_CLE_ZONES_ACTIVES
 from apps.core.permissions import EstAdministrateur
 
 from .clustering import generer_zones_depuis_incidents
@@ -20,7 +22,7 @@ class ZoneViewSet(viewsets.ReadOnlyModelViewSet):
         return [AllowAny()]
 
     def get_queryset(self):
-        queryset = Zone.objects.all().order_by('-score_danger')
+        queryset = Zone.objects.all().select_related('validee_par').order_by('-score_danger')
         utilisateur = self.request.user
         est_admin_ou_anaser = utilisateur.is_authenticated and getattr(utilisateur, 'role', None) in ('admin', 'anaser')
         if not est_admin_ou_anaser:
@@ -37,6 +39,7 @@ class ZoneViewSet(viewsets.ReadOnlyModelViewSet):
         zone.validee_par = request.user
         zone.validee_le = timezone.now()
         zone.save(update_fields=['statut_validation', 'validee_par', 'validee_le'])
+        cache.delete(CACHE_CLE_ZONES_ACTIVES)
         return Response(ZoneSerializer(zone).data)
 
     @action(detail=False, methods=['post'])
