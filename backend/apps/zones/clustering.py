@@ -1,3 +1,6 @@
+import logging
+from collections import Counter
+
 import numpy as np
 from geopy.distance import geodesic
 from sklearn.cluster import DBSCAN
@@ -10,6 +13,8 @@ from .models import Zone
 
 RAYON_TERRE_METRES = 6371000
 
+logger = logging.getLogger(__name__)
+
 
 def _niveau_danger(score_danger):
     if score_danger >= 15:
@@ -17,6 +22,35 @@ def _niveau_danger(score_danger):
     if score_danger >= 4:
         return Zone.NiveauDanger.VIGILANCE
     return Zone.NiveauDanger.NORMALE
+
+
+def _region_majoritaire(incidents_du_cluster, latitude_centre, longitude_centre):
+    """Région d'une zone = région majoritaire des boîtiers de ses incidents contributeurs
+    (décidé après le clustering géographique national, jamais pour le partitionner — voir
+    l'audit de l'étape 4D). Les incidents dont le boîtier n'a pas de région assignée ne
+    participent pas au décompte. Retourne None — comportement sûr, jamais une région
+    devinée — si aucune région n'a de majorité stricte, et signale le cas dans les logs
+    plutôt que de trancher silencieusement."""
+    compteur = Counter(inc.boitier.region for inc in incidents_du_cluster if inc.boitier.region)
+    if not compteur:
+        logger.warning(
+            "Zone autour de (%.5f, %.5f) : aucun des %d incident(s) contributeur(s) n'a de "
+            "boîtier régionalisé — région laissée à NULL.",
+            latitude_centre, longitude_centre, len(incidents_du_cluster),
+        )
+        return None
+
+    plus_frequentes = compteur.most_common()
+    region_haut, effectif_haut = plus_frequentes[0]
+    if len(plus_frequentes) > 1 and plus_frequentes[1][1] == effectif_haut:
+        logger.warning(
+            "Zone autour de (%.5f, %.5f) : pas de région majoritaire claire parmi les "
+            "boîtiers contributeurs (égalité %s) — région laissée à NULL.",
+            latitude_centre, longitude_centre, dict(plus_frequentes),
+        )
+        return None
+
+    return region_haut
 
 
 def generer_zones_depuis_incidents():
@@ -27,7 +61,13 @@ def generer_zones_depuis_incidents():
     à son statut_validation. Sinon une nouvelle zone EN_ATTENTE est créée.
     """
     config = ConfigurationSysteme.instance()
-    incidents = list(Incident.objects.all().only('id', 'latitude', 'longitude', 'niveau_gravite'))
+    # select_related('boitier') : la région de chaque incident (pour la région majoritaire
+    # de sa zone, calculée plus bas) se lit sur son boîtier, jamais sur ses propres champs —
+    # Incident ne porte pas de région propre (voir étape 4B).
+    incidents = list(
+        Incident.objects.all().select_related('boitier')
+        .only('id', 'latitude', 'longitude', 'niveau_gravite', 'boitier__region', 'boitier_id')
+    )
 
     if len(incidents) < config.min_incidents_pour_zone:
         return {'zones_creees': 0, 'zones_mises_a_jour': 0, 'incidents_traites': len(incidents)}
@@ -58,6 +98,7 @@ def generer_zones_depuis_incidents():
         )
         score_danger = nombre_incidents + 2 * nombre_critiques
         niveau_danger = _niveau_danger(score_danger)
+        region = _region_majoritaire(incidents_du_cluster, latitude_centre, longitude_centre)
 
         # Pré-filtre bounding box (exploitable par un index B-tree sur latitude_centre/
         # longitude_centre) avant le calcul géodésique précis mais coûteux : on ne
@@ -86,6 +127,7 @@ def generer_zones_depuis_incidents():
             zone_existante.nombre_incidents = nombre_incidents
             zone_existante.score_danger = score_danger
             zone_existante.niveau_danger = niveau_danger
+            zone_existante.region = region
             zone_existante.save()
             zone = zone_existante
             zones_mises_a_jour += 1
@@ -97,6 +139,7 @@ def generer_zones_depuis_incidents():
                 nombre_incidents=nombre_incidents,
                 score_danger=score_danger,
                 niveau_danger=niveau_danger,
+                region=region,
             )
             zones_creees += 1
 

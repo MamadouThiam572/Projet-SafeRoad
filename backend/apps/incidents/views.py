@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from apps.boitiers.models import HistoriqueSync
 from apps.configuration.models import ConfigurationSysteme
 from apps.core.permissions import EstAdminOuAnaser, EstBoitier
+from apps.core.regionalisation import FiltreRegional
 
 from .models import Incident
 from .serializers import IncidentIngestionSerializer, IncidentSerializer
@@ -70,7 +71,17 @@ class SyncBatchView(APIView):
 
 
 class IncidentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    # Lecture seule (List + Retrieve) : aucune action d'écriture n'existe sur ce ViewSet,
+    # les incidents sont créés exclusivement via IngestionView/SyncBatchView (EstBoitier),
+    # jamais par un compte administrateur — rien à protéger côté POST/PATCH/PUT/DELETE ici.
     queryset = Incident.objects.all().select_related('boitier', 'zone')
     serializer_class = IncidentSerializer
     permission_classes = [EstAdminOuAnaser]
     pagination_class = IncidentCursorPagination
+    # Super admin : tous les incidents. Administrateur régional : uniquement ceux dont le
+    # boîtier est affecté à sa région (queryset vide si region=None). ANASER : comportement
+    # inchangé (FiltreRegional ne restreint que role='admin'). S'applique à list() ET à
+    # retrieve() via get_object() -> filter_queryset(get_queryset()) : un incident d'une
+    # autre région renvoie 404, comme s'il n'existait pas.
+    filter_backends = [FiltreRegional]
+    region_lookup_field = 'boitier__region'

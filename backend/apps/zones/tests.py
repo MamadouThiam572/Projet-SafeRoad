@@ -1,11 +1,13 @@
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from apps.boitiers.models import Boitier
+from apps.comptes.models import Administrateur
 from apps.configuration.models import ConfigurationSysteme
 from apps.incidents.models import Incident
 
-from .clustering import _niveau_danger, generer_zones_depuis_incidents
+from .clustering import _niveau_danger, _region_majoritaire, generer_zones_depuis_incidents
 from .models import Zone
 
 # Un cluster serré autour de ce point (quelques dizaines de mètres d'écart, bien sous
@@ -107,3 +109,183 @@ class GenererZonesDepuisIncidentsTests(TestCase):
 
         zone.refresh_from_db()
         self.assertEqual(zone.statut_validation, Zone.StatutValidation.VALIDEE)
+
+
+class RegionMajoritaireTests(TestCase):
+    """`_region_majoritaire` — étape 4D : la région d'une zone se déduit APRÈS le
+    clustering (qui reste national), à partir des boîtiers des incidents contributeurs.
+    Testée en isolation avec de faux incidents (juste un `.boitier.region`)."""
+
+    class _FauxIncident:
+        def __init__(self, region):
+            self.boitier = type('FauxBoitier', (), {'region': region})()
+
+    def test_une_region_unanime_est_retenue(self):
+        incidents = [self._FauxIncident('dakar'), self._FauxIncident('dakar'), self._FauxIncident('dakar')]
+        self.assertEqual(_region_majoritaire(incidents, 0, 0), 'dakar')
+
+    def test_une_region_strictement_majoritaire_est_retenue(self):
+        incidents = [self._FauxIncident('dakar'), self._FauxIncident('dakar'), self._FauxIncident('thies')]
+        self.assertEqual(_region_majoritaire(incidents, 0, 0), 'dakar')
+
+    def test_egalite_stricte_ne_choisit_aucune_region(self):
+        # Comportement sûr explicite : pas de région devinée en cas d'égalité.
+        incidents = [self._FauxIncident('dakar'), self._FauxIncident('thies')]
+        self.assertIsNone(_region_majoritaire(incidents, 0, 0))
+
+    def test_egalite_stricte_est_signalee_dans_les_logs(self):
+        incidents = [self._FauxIncident('dakar'), self._FauxIncident('thies')]
+        with self.assertLogs('apps.zones.clustering', level='WARNING') as journal:
+            _region_majoritaire(incidents, 14.69, -17.44)
+        self.assertTrue(any('majoritaire' in message for message in journal.output))
+
+    def test_incidents_sans_boitier_regionalise_sont_ignores(self):
+        incidents = [self._FauxIncident(None), self._FauxIncident(None), self._FauxIncident('dakar')]
+        self.assertEqual(_region_majoritaire(incidents, 0, 0), 'dakar')
+
+    def test_aucun_boitier_regionalise_ne_choisit_aucune_region(self):
+        incidents = [self._FauxIncident(None), self._FauxIncident(None)]
+        with self.assertLogs('apps.zones.clustering', level='WARNING'):
+            resultat = _region_majoritaire(incidents, 0, 0)
+        self.assertIsNone(resultat)
+
+
+class GenererZonesDepuisIncidentsRegionTests(TestCase):
+    """Intégration bout en bout : la région se retrouve bien sur la Zone créée/mise à jour
+    par le clustering réel (toujours national — voir generer_zones_depuis_incidents)."""
+
+    def _creer_incident(self, boitier, decalage):
+        return Incident.objects.create(
+            boitier=boitier, latitude=LATITUDE_BASE + decalage, longitude=LONGITUDE_BASE + decalage,
+            horodatage=timezone.now(), type_incident=Incident.TypeIncident.AUTRE,
+        )
+
+    def test_zone_recoit_la_region_majoritaire_de_ses_boitiers_contributeurs(self):
+        boitier_dakar = Boitier.objects.create(region='dakar')
+        for i in range(3):
+            self._creer_incident(boitier_dakar, decalage=0.0002 * i)
+
+        generer_zones_depuis_incidents()
+
+        self.assertEqual(Zone.objects.get().region, 'dakar')
+
+    def test_zone_sans_region_majoritaire_claire_reste_a_null(self):
+        # 2 incidents Dakar + 2 incidents Thiès dans le même cluster géographique : égalité
+        # stricte, aucune région ne doit être devinée (voir RegionMajoritaireTests).
+        boitier_dakar = Boitier.objects.create(region='dakar')
+        boitier_thies = Boitier.objects.create(region='thies')
+        self._creer_incident(boitier_dakar, decalage=0.0000)
+        self._creer_incident(boitier_dakar, decalage=0.0001)
+        self._creer_incident(boitier_thies, decalage=0.0002)
+        self._creer_incident(boitier_thies, decalage=0.0003)
+
+        generer_zones_depuis_incidents()
+
+        self.assertIsNone(Zone.objects.get().region)
+
+    def test_region_est_recalculee_a_chaque_reclustering(self):
+        boitier_dakar = Boitier.objects.create(region='dakar')
+        for i in range(3):
+            self._creer_incident(boitier_dakar, decalage=0.0002 * i)
+        generer_zones_depuis_incidents()
+        self.assertEqual(Zone.objects.get().region, 'dakar')
+
+        # De nouveaux incidents d'un boîtier de Thiès dans le même cluster géographique
+        # font basculer la majorité (4 Thiès > 3 Dakar) — la région n'est jamais figée
+        # après une première passe, recalculée à chaque reclustering.
+        boitier_thies = Boitier.objects.create(region='thies')
+        for i in range(4):
+            self._creer_incident(boitier_thies, decalage=0.0002 + 0.00001 * i)
+        generer_zones_depuis_incidents()
+
+        self.assertEqual(Zone.objects.get().region, 'thies')
+
+
+class ZoneFiltrageRegionalTests(TestCase):
+    """Étape 4D : ZoneViewSet applique FiltreRegional en plus du filtre public existant
+    (validé+actif pour un visiteur non privilégié) — les deux se composent."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-admin-zones@test.sn', password='x', nom='Fall', prenom='Aida',
+            role=Administrateur.Role.SUPER_ADMIN,
+        )
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='admin-dakar-zones@test.sn', password='x', nom='Diop', prenom='Cheikh',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.admin_sans_region = Administrateur.objects.create_user(
+            email='admin-sr-zones@test.sn', password='x', nom='Wade', prenom='Fatoumata',
+            role=Administrateur.Role.ADMIN, region=None,
+        )
+        cls.anaser = Administrateur.objects.create_user(
+            email='anaser-zones@test.sn', password='x', nom='Diallo', prenom='Assane',
+            role=Administrateur.Role.ANASER,
+        )
+
+        cls.zone_dakar = Zone.objects.create(
+            latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=300,
+            region='dakar', statut_validation=Zone.StatutValidation.VALIDEE, actif=True,
+        )
+        cls.zone_thies = Zone.objects.create(
+            latitude_centre=LATITUDE_BASE + 1, longitude_centre=LONGITUDE_BASE + 1, rayon_metres=300,
+            region='thies', statut_validation=Zone.StatutValidation.VALIDEE, actif=True,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_super_admin_voit_toutes_les_zones(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.get('/api/v1/zones/')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {z['id'] for z in reponse.data}
+        self.assertEqual(ids, {self.zone_dakar.id, self.zone_thies.id})
+
+    def test_admin_regional_ne_voit_que_les_zones_de_sa_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get('/api/v1/zones/')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {z['id'] for z in reponse.data}
+        self.assertEqual(ids, {self.zone_dakar.id})
+
+    def test_admin_regional_ne_peut_pas_recuperer_une_zone_d_une_autre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get(f'/api/v1/zones/{self.zone_thies.id}/')
+        self.assertEqual(reponse.status_code, 404)
+
+    def test_admin_regional_ne_peut_pas_valider_une_zone_d_une_autre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.patch(
+            f'/api/v1/zones/{self.zone_thies.id}/valider/', {'statut_validation': 'validee'}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 404)
+
+    def test_admin_regional_sans_region_ne_voit_aucune_zone(self):
+        self.client.force_authenticate(user=self.admin_sans_region)
+        reponse = self.client.get('/api/v1/zones/')
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.data, [])
+
+    def test_un_parametre_region_dans_l_url_est_ignore(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get('/api/v1/zones/?region=thies')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {z['id'] for z in reponse.data}
+        self.assertEqual(ids, {self.zone_dakar.id})
+
+    def test_anaser_conserve_un_acces_national_sans_filtrage_regional(self):
+        self.client.force_authenticate(user=self.anaser)
+        reponse = self.client.get('/api/v1/zones/')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {z['id'] for z in reponse.data}
+        self.assertEqual(ids, {self.zone_dakar.id, self.zone_thies.id})
+
+    def test_public_voit_toutes_les_regions_sans_filtrage_regional(self):
+        # Comportement inchangé pour le visiteur non authentifié : filtré par
+        # validation/actif (déjà existant), jamais par région.
+        reponse = self.client.get('/api/v1/zones/')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {z['id'] for z in reponse.data}
+        self.assertEqual(ids, {self.zone_dakar.id, self.zone_thies.id})

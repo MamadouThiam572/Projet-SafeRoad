@@ -14,6 +14,7 @@ from apps.core.cache_keys import CACHE_CLE_ZONES_ACTIVES, CACHE_TTL_ZONES_ACTIVE
 from apps.core.geo import boite_englobante
 from apps.core.pagination import PaginationListeGestion
 from apps.core.permissions import EstAdministrateur, EstBoitier
+from apps.core.regionalisation import FiltreRegional
 from apps.zones.models import Zone
 
 from .models import Boitier
@@ -39,6 +40,15 @@ class BoitierViewSet(viewsets.ModelViewSet):
     queryset = Boitier.objects.all().order_by('-date_creation')
     permission_classes = [EstAdministrateur]
     pagination_class = PaginationListeGestion
+    # Super admin : tous les boîtiers. Administrateur régional : uniquement ceux de
+    # request.user.region (queryset vide si region=None). ANASER n'a de toute façon pas
+    # accès à ce ViewSet (EstAdministrateur ne couvre pas ce rôle) — comportement inchangé.
+    # S'applique automatiquement à list/retrieve/update/partial_update/destroy (et à
+    # regenerer_cle, qui passe par get_object()) puisque tous appellent get_queryset() via
+    # filter_queryset() — un boîtier d'une autre région n'existe simplement pas dans le
+    # queryset filtré, donc 404 comme s'il n'existait pas, pas seulement absent de la liste.
+    filter_backends = [FiltreRegional]
+    region_lookup_field = 'region'
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -46,7 +56,15 @@ class BoitierViewSet(viewsets.ModelViewSet):
         return BoitierSerializer
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        donnees = request.data.copy()
+        if getattr(request.user, 'role', None) == 'admin':
+            # Un administrateur régional ne peut jamais rattacher un boîtier à une autre
+            # région que la sienne : la valeur envoyée par le client est purement et
+            # simplement remplacée, jamais fusionnée — seul request.user.region fait foi
+            # (même principe que FiltreRegional). Un super administrateur reste libre de
+            # choisir la région du boîtier créé.
+            donnees['region'] = request.user.region
+        serializer = self.get_serializer(data=donnees)
         serializer.is_valid(raise_exception=True)
         boitier = serializer.save()
         api_key_en_clair = secrets.token_urlsafe(32)

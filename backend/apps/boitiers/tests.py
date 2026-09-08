@@ -106,9 +106,12 @@ class RegenerationCleTests(TestCase):
     délai : l'ancienne clé doit rester valide pendant la fenêtre de grâce configurée."""
 
     def setUp(self):
+        # super_admin, pas admin régional : ce test porte sur la régénération de clé, pas
+        # sur le filtrage régional (voir BoitierFiltrageRegionalTests pour celui-ci) — un
+        # admin régional sans région assignée n'aurait accès à aucun boîtier.
         self.admin = Administrateur.objects.create_user(
             email='admin-boitier@test.sn', password='x', nom='Ndiaye', prenom='Aissatou',
-            role=Administrateur.Role.ADMIN,
+            role=Administrateur.Role.SUPER_ADMIN,
         )
         self.boitier = Boitier()
         self.boitier.set_api_key('cle-initiale')
@@ -145,9 +148,11 @@ class BoitierPaginationOptionnelleTests(TestCase):
 
     @classmethod
     def setUpTestData(cls):
+        # super_admin : ce test porte sur la mécanique de pagination, pas sur le filtrage
+        # régional — les 16 boîtiers créés ci-dessous n'ont volontairement pas de région.
         cls.admin = Administrateur.objects.create_user(
             email='admin-pagination@test.sn', password='x', nom='Sarr', prenom='Cheikh',
-            role=Administrateur.Role.ADMIN,
+            role=Administrateur.Role.SUPER_ADMIN,
         )
         for _ in range(16):
             Boitier.objects.create()
@@ -182,6 +187,10 @@ class BoitierRegionEtStatutTests(TestCase):
             email='admin-region-boitier@test.sn', password='x', nom='Kane', prenom='Seynabou',
             role=Administrateur.Role.ADMIN, region='dakar',
         )
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-admin-region-boitier@test.sn', password='x', nom='Diallo', prenom='Aminata',
+            role=Administrateur.Role.SUPER_ADMIN,
+        )
 
     def setUp(self):
         self.client = APIClient()
@@ -215,10 +224,13 @@ class BoitierRegionEtStatutTests(TestCase):
         self.assertEqual(boitier.region, 'dakar')
 
     def test_le_serializer_expose_region_statut_et_gps(self):
+        # super_admin : ce test porte sur la sérialisation, pas sur le filtrage régional —
+        # le boîtier est volontairement dans une région différente de celle de self.admin.
         boitier = Boitier.objects.create(
             region=Region.KOLDA, statut=Boitier.Statut.MAINTENANCE,
             derniere_latitude=LATITUDE_BASE, derniere_longitude=LONGITUDE_BASE,
         )
+        self.client.force_authenticate(user=self.super_admin)
         reponse = self.client.get(f'/api/v1/boitiers/{boitier.id}/')
         self.assertEqual(reponse.status_code, 200)
         self.assertEqual(reponse.data['region'], 'kolda')
@@ -229,32 +241,164 @@ class BoitierRegionEtStatutTests(TestCase):
         self.assertEqual(reponse.data['derniere_longitude'], LONGITUDE_BASE)
 
     def test_le_serializer_expose_une_region_nulle_sans_erreur(self):
+        # super_admin : un boîtier region=None serait invisible pour un admin régional
+        # (queryset filtré sur sa propre région) — ce test porte sur la sérialisation.
         boitier = Boitier.objects.create()
+        self.client.force_authenticate(user=self.super_admin)
         reponse = self.client.get(f'/api/v1/boitiers/{boitier.id}/')
         self.assertEqual(reponse.status_code, 200)
         self.assertIsNone(reponse.data['region'])
         self.assertIsNone(reponse.data['region_libelle'])
 
-    def test_creation_via_api_avec_region_fonctionne(self):
+    def test_creation_via_api_ignore_la_region_envoyee_par_le_client(self):
+        # Depuis l'étape 4A (filtrage régional des boîtiers) : un administrateur régional ne
+        # peut plus imposer une région arbitraire à la création — voir BoitierFiltrageRegionalTests
+        # pour le test de contournement dédié. self.admin est rattaché à 'dakar'.
         reponse = self.client.post('/api/v1/boitiers/', {
             'proprietaire_nom': 'Transports Bâ', 'numero_immatriculation': 'DK-1234-AA', 'region': 'saint_louis',
         }, format='json')
         self.assertEqual(reponse.status_code, 201)
-        self.assertEqual(reponse.data['region'], 'saint_louis')
+        self.assertEqual(reponse.data['region'], 'dakar')  # jamais 'saint_louis' envoyé par le client
         self.assertIn('api_key', reponse.data)
 
-    def test_creation_via_api_sans_region_fonctionne_toujours(self):
-        # Ne doit PAS devenir obligatoire à cette étape (pas de stratégie d'initialisation
-        # définie) — contrairement à Administrateur, où la région est requise pour role=admin.
+    def test_creation_via_api_sans_region_fournie_utilise_celle_de_l_administrateur(self):
         reponse = self.client.post('/api/v1/boitiers/', {
             'proprietaire_nom': 'Transports Bâ', 'numero_immatriculation': 'DK-5678-BB',
         }, format='json')
         self.assertEqual(reponse.status_code, 201)
-        self.assertIsNone(reponse.data['region'])
+        self.assertEqual(reponse.data['region'], 'dakar')
 
-    def test_region_invalide_est_rejetee(self):
+    def test_region_invalide_est_rejetee_pour_un_super_admin(self):
+        # Pour un administrateur régional, la région du client est de toute façon ignorée
+        # (voir ci-dessus) — une valeur invalide n'a donc plus l'occasion d'être validée
+        # pour lui. Seul un super administrateur transmet encore sa propre valeur de région.
+        self.client.force_authenticate(user=self.super_admin)
         reponse = self.client.post('/api/v1/boitiers/', {
             'proprietaire_nom': 'Transports Bâ', 'region': 'paris',
         }, format='json')
         self.assertEqual(reponse.status_code, 400)
         self.assertIn('region', reponse.data)
+
+
+class BoitierFiltrageRegionalTests(TestCase):
+    """Étape 4A : le ViewSet des boîtiers applique désormais FiltreRegional (voir
+    apps/core/regionalisation.py). Couvre la lecture (liste + détail), l'écriture
+    (PATCH/DELETE) sur un objet d'une autre région, la création, et la tentative de
+    contournement par un paramètre client."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-admin-boitiers@test.sn', password='x', nom='Sarr', prenom='Modou',
+            role=Administrateur.Role.SUPER_ADMIN,
+        )
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='admin-dakar-boitiers@test.sn', password='x', nom='Ndiaye', prenom='Coumba',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.admin_sans_region = Administrateur.objects.create_user(
+            email='admin-sr-boitiers@test.sn', password='x', nom='Sow', prenom='Alioune',
+            role=Administrateur.Role.ADMIN, region=None,
+        )
+        cls.anaser = Administrateur.objects.create_user(
+            email='anaser-boitiers@test.sn', password='x', nom='Faye', prenom='Bineta',
+            role=Administrateur.Role.ANASER,
+        )
+
+        cls.boitier_dakar = Boitier.objects.create(region='dakar', numero_immatriculation='DK-0001')
+        cls.boitier_thies = Boitier.objects.create(region='thies', numero_immatriculation='TH-0001')
+        cls.boitier_ziguinchor = Boitier.objects.create(region='ziguinchor', numero_immatriculation='ZG-0001')
+
+    def setUp(self):
+        self.client = APIClient()
+
+    # --- A. Super Admin ---
+
+    def test_super_admin_voit_les_boitiers_de_toutes_les_regions(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.get('/api/v1/boitiers/')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {b['id'] for b in reponse.data}
+        self.assertEqual(ids, {str(self.boitier_dakar.id), str(self.boitier_thies.id), str(self.boitier_ziguinchor.id)})
+
+    # --- B. Admin régional : liste ---
+
+    def test_admin_regional_ne_voit_que_les_boitiers_de_sa_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get('/api/v1/boitiers/')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {b['id'] for b in reponse.data}
+        self.assertEqual(ids, {str(self.boitier_dakar.id)})
+
+    # --- C. Admin régional : détail d'un boîtier d'une autre région ---
+
+    def test_admin_regional_ne_peut_pas_recuperer_un_boitier_d_une_autre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get(f'/api/v1/boitiers/{self.boitier_thies.id}/')
+        self.assertEqual(reponse.status_code, 404)
+
+    def test_admin_regional_peut_recuperer_un_boitier_de_sa_propre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get(f'/api/v1/boitiers/{self.boitier_dakar.id}/')
+        self.assertEqual(reponse.status_code, 200)
+
+    # --- D. PATCH sur un boîtier d'une autre région ---
+
+    def test_admin_regional_ne_peut_pas_modifier_un_boitier_d_une_autre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.patch(
+            f'/api/v1/boitiers/{self.boitier_thies.id}/', {'statut': 'maintenance'}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 404)
+        self.boitier_thies.refresh_from_db()
+        self.assertEqual(self.boitier_thies.statut, 'actif')  # inchangé
+
+    # --- E. DELETE sur un boîtier d'une autre région ---
+
+    def test_admin_regional_ne_peut_pas_supprimer_un_boitier_d_une_autre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.delete(f'/api/v1/boitiers/{self.boitier_ziguinchor.id}/')
+        self.assertEqual(reponse.status_code, 404)
+        self.assertTrue(Boitier.objects.filter(id=self.boitier_ziguinchor.id).exists())
+
+    # --- F. Admin régional sans région ---
+
+    def test_admin_regional_sans_region_ne_voit_aucun_boitier(self):
+        self.client.force_authenticate(user=self.admin_sans_region)
+        reponse = self.client.get('/api/v1/boitiers/')
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.data, [])
+
+    # --- G. Sécurité : paramètre client ignoré ---
+
+    def test_un_parametre_region_dans_l_url_est_ignore(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.get('/api/v1/boitiers/?region=thies')
+        self.assertEqual(reponse.status_code, 200)
+        ids = {b['id'] for b in reponse.data}
+        self.assertEqual(ids, {str(self.boitier_dakar.id)})  # jamais les boîtiers de Thiès
+
+    # --- H. Création : contournement par la région ---
+
+    def test_admin_regional_ne_peut_pas_creer_un_boitier_dans_une_autre_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.post('/api/v1/boitiers/', {
+            'proprietaire_nom': 'Transports Diop', 'region': 'ziguinchor',
+        }, format='json')
+        self.assertEqual(reponse.status_code, 201)
+        self.assertEqual(reponse.data['region'], 'dakar')  # jamais 'ziguinchor'
+
+    def test_super_admin_peut_choisir_la_region_a_la_creation(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.post('/api/v1/boitiers/', {
+            'proprietaire_nom': 'Transports Fall', 'region': 'kolda',
+        }, format='json')
+        self.assertEqual(reponse.status_code, 201)
+        self.assertEqual(reponse.data['region'], 'kolda')
+
+    # --- I. ANASER : comportement inchangé ---
+
+    def test_anaser_n_a_toujours_pas_acces_aux_boitiers(self):
+        self.client.force_authenticate(user=self.anaser)
+        reponse = self.client.get('/api/v1/boitiers/')
+        self.assertEqual(reponse.status_code, 403)

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from apps.core.cache_keys import CACHE_CLE_ZONES_ACTIVES
 from apps.core.permissions import EstAdministrateur
+from apps.core.regionalisation import FiltreRegional
 
 from .clustering import generer_zones_depuis_incidents
 from .models import Zone
@@ -15,6 +16,13 @@ from .serializers import ZoneSerializer
 
 class ZoneViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ZoneSerializer
+    # Super admin : toutes les zones. Administrateur régional : uniquement celles de sa
+    # région (queryset vide si region=None). ANASER et public : comportement inchangé
+    # (FiltreRegional ne restreint que role='admin' — voir get_queryset ci-dessous pour le
+    # filtre public existant, appliqué AVANT celui-ci, les deux se composent). S'applique
+    # aussi à `valider` via get_object() -> filter_queryset(get_queryset()).
+    filter_backends = [FiltreRegional]
+    region_lookup_field = 'region'
 
     def get_permissions(self):
         if self.action in ('valider', 'generer'):

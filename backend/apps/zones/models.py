@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from apps.core.models import ModeleHorodate
+from apps.core.regions import Region
 
 
 class Zone(ModeleHorodate):
@@ -16,6 +17,11 @@ class Zone(ModeleHorodate):
         REJETEE = 'rejetee', 'Rejetée'
 
     nom = models.CharField(max_length=150, blank=True)
+    # Région déduite après coup de la majorité des boîtiers des incidents contributeurs
+    # (voir clustering.py `_region_majoritaire`) — jamais du clustering lui-même, qui reste
+    # national. Null si aucune région n'est clairement majoritaire, ou si le clustering
+    # n'a pas encore tourné sur cette zone.
+    region = models.CharField(max_length=20, choices=Region.choices, null=True, blank=True)
     latitude_centre = models.FloatField(db_index=True)
     longitude_centre = models.FloatField(db_index=True)
     rayon_metres = models.FloatField()
