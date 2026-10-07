@@ -19,8 +19,11 @@ export function decodeJwt(token: string): JwtPayload | null {
   try {
     const payload = token.split('.')[1]
     if (!payload) return null
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
-    return JSON.parse(json) as JwtPayload
+    // atob() renvoie un octet par caractère : sans TextDecoder, les accents encodés
+    // en UTF-8 par le backend (ex. prenom = "Diène") s'afficheraient "DiÃ¨ne".
+    const binary = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+    return JSON.parse(new TextDecoder().decode(bytes)) as JwtPayload
   } catch {
     return null
   }

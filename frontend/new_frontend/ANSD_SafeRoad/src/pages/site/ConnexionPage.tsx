@@ -30,8 +30,12 @@ const FEATURES: [string, string][] = [
  * la vraie authentification.
  */
 function fakeDevToken(role: UserRole): string {
+  // Encodé en UTF-8 comme un vrai JWT, pour que decodeJwt() relise correctement "Démo".
   const b64url = (obj: unknown) =>
-    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(obj))))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
   const header = b64url({ alg: 'none', typ: 'JWT' })
   const payload = b64url({
     sub: `dev-${role}`,
@@ -81,11 +85,11 @@ export function ConnexionPage() {
       // Conducteur vit dans un modèle Django séparé d'Administrateur (sous_admin /
       // super_admin / anaser) : deux endpoints de connexion distincts côté backend,
       // voir lib/api.ts (login vs loginConducteur).
-      const { access } =
+      const { access, refresh } =
         role === 'conducteur'
           ? await loginConducteurRequest(email.trim(), password)
           : await loginRequest(email.trim(), password)
-      login(access)
+      login(access, refresh)
       redirectAfterLogin(access)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Connexion impossible pour le moment.')

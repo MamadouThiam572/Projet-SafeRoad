@@ -1,15 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  clearSession,
+  getAccessToken,
+  hasRefreshToken,
+  logoutSession,
+  onSessionChange,
+  refreshSession,
+  saveSession,
+} from '@/lib/api'
 import { decodeJwt, isJwtExpired } from '@/lib/jwt'
 import type { AuthUser, UserRole } from '@/types/auth'
-
-const TOKEN_KEY = 'saferoad_token'
 
 interface AuthContextValue {
   user: AuthUser | null
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (token: string) => void
+  login: (access: string, refresh?: string) => void
   logout: () => void
 }
 
@@ -49,37 +56,59 @@ function userFromToken(token: string): AuthUser | null {
   }
 }
 
+// Renouvellement un peu avant l'expiration, pour qu'aucune requête ne parte avec un token mort.
+const REFRESH_MARGIN_MS = 60_000
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  // Le stockage des tokens vit dans lib/api.ts (qui les renouvelle aussi sur 401) :
+  // ce contexte se contente de refléter chaque changement de session.
   useEffect(() => {
-    const stored = localStorage.getItem(TOKEN_KEY)
-    if (stored) {
-      const nextUser = userFromToken(stored)
-      if (nextUser) {
-        setToken(stored)
-        setUser(nextUser)
-      } else {
-        localStorage.removeItem(TOKEN_KEY)
-      }
+    const unsubscribe = onSessionChange((access) => {
+      const nextUser = access ? userFromToken(access) : null
+      setToken(nextUser ? access : null)
+      setUser(nextUser)
+    })
+
+    const stored = getAccessToken()
+    const storedUser = stored ? userFromToken(stored) : null
+    if (stored && storedUser) {
+      setToken(stored)
+      setUser(storedUser)
+      setIsLoading(false)
+    } else if (hasRefreshToken()) {
+      // Access expiré (ex. onglet rouvert le lendemain) : on tente de prolonger la session.
+      refreshSession().finally(() => setIsLoading(false))
+    } else {
+      if (stored) clearSession()
+      setIsLoading(false)
     }
-    setIsLoading(false)
+
+    return unsubscribe
   }, [])
 
-  const login = useCallback((newToken: string) => {
-    const nextUser = userFromToken(newToken)
-    if (!nextUser) return
-    localStorage.setItem(TOKEN_KEY, newToken)
-    setToken(newToken)
-    setUser(nextUser)
+  useEffect(() => {
+    const exp = token ? decodeJwt(token)?.exp : undefined
+    if (!exp) return
+    const delay = Math.max(exp * 1000 - Date.now() - REFRESH_MARGIN_MS, 0)
+    const id = setTimeout(() => {
+      // Sans refresh token (ex. faux token de dev), la session se termine à l'expiration.
+      if (hasRefreshToken()) refreshSession()
+      else clearSession()
+    }, delay)
+    return () => clearTimeout(id)
+  }, [token])
+
+  const login = useCallback((access: string, refresh?: string) => {
+    if (!userFromToken(access)) return
+    saveSession(access, refresh)
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY)
-    setToken(null)
-    setUser(null)
+    logoutSession()
   }, [])
 
   const value = useMemo<AuthContextValue>(

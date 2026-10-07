@@ -1,4 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api'
+import { decodeJwt } from '@/lib/jwt'
+
+// Même valeur que .env.example : le backend monte toute l'API sous /api/v1/ (config/urls.py).
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1'
 
 export class ApiError extends Error {
   status: number
@@ -60,10 +63,111 @@ export async function loginConducteur(email: string, password: string): Promise<
   return res.json()
 }
 
-const TOKEN_KEY = 'saferoad_token'
+// ---------------------------------------------------------------------------
+// Session : access token (1 h) + refresh token (1 jour), voir SIMPLE_JWT côté Django.
+// AuthContext s'abonne via onSessionChange() pour suivre les renouvellements
+// faits ici (refresh automatique sur 401) et les expirations de session.
+// ---------------------------------------------------------------------------
 
-async function authorizedFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem(TOKEN_KEY)
+const ACCESS_KEY = 'saferoad_token'
+const REFRESH_KEY = 'saferoad_refresh'
+
+type SessionListener = (access: string | null) => void
+const sessionListeners = new Set<SessionListener>()
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_KEY)
+}
+
+export function hasRefreshToken(): boolean {
+  return localStorage.getItem(REFRESH_KEY) !== null
+}
+
+export function onSessionChange(listener: SessionListener): () => void {
+  sessionListeners.add(listener)
+  return () => sessionListeners.delete(listener)
+}
+
+export function saveSession(access: string, refresh?: string) {
+  localStorage.setItem(ACCESS_KEY, access)
+  if (refresh) localStorage.setItem(REFRESH_KEY, refresh)
+  else localStorage.removeItem(REFRESH_KEY)
+  sessionListeners.forEach((listener) => listener(access))
+}
+
+export function clearSession() {
+  localStorage.removeItem(ACCESS_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+  sessionListeners.forEach((listener) => listener(null))
+}
+
+// Conducteur et Administrateur ont chacun leurs endpoints refresh/logout
+// (claim `type_compte`, voir apps/conducteurs/views.py et apps/comptes/serializers.py).
+function authPath(refreshToken: string, action: 'refresh' | 'logout'): string {
+  const isConducteur = decodeJwt(refreshToken)?.type_compte === 'conducteur'
+  return isConducteur ? `/auth/conducteur/${action}/` : `/auth/${action}/`
+}
+
+let pendingRefresh: Promise<string | null> | null = null
+
+/**
+ * Renouvelle l'access token. Les appels simultanés partagent la même requête :
+ * côté admin le refresh est à usage unique (ROTATE_REFRESH_TOKENS + blacklist),
+ * deux envois parallèles feraient échouer le second. Renvoie null si la session
+ * est terminée (refresh absent, expiré ou révoqué) — elle est alors effacée.
+ */
+export function refreshSession(): Promise<string | null> {
+  pendingRefresh ??= doRefresh().finally(() => {
+    pendingRefresh = null
+  })
+  return pendingRefresh
+}
+
+async function doRefresh(): Promise<string | null> {
+  const refresh = localStorage.getItem(REFRESH_KEY)
+  if (!refresh) {
+    clearSession()
+    return null
+  }
+
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${authPath(refresh, 'refresh')}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    })
+  } catch {
+    // Réseau indisponible : on garde la session, le prochain appel réessaiera.
+    return null
+  }
+
+  if (!res.ok) {
+    clearSession()
+    return null
+  }
+
+  // L'admin reçoit un nouveau refresh (rotation), le conducteur garde le sien.
+  const data = (await res.json()) as { access: string; refresh?: string }
+  saveSession(data.access, data.refresh ?? refresh)
+  return data.access
+}
+
+/** Déconnexion : efface la session locale puis révoque le refresh côté serveur (au mieux). */
+export function logoutSession() {
+  const access = getAccessToken()
+  const refresh = localStorage.getItem(REFRESH_KEY)
+  clearSession()
+  if (!access || !refresh) return
+  fetch(`${API_BASE}${authPath(refresh, 'logout')}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access}` },
+    body: JSON.stringify({ refresh }),
+  }).catch(() => {})
+}
+
+async function authorizedFetch<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
+  const token = getAccessToken()
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -73,6 +177,11 @@ async function authorizedFetch<T>(path: string, options: RequestInit = {}): Prom
       ...options.headers,
     },
   })
+
+  // Access token expiré : un seul renouvellement puis on rejoue la requête.
+  if (res.status === 401 && retry && (await refreshSession())) {
+    return authorizedFetch<T>(path, options, false)
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => null)
