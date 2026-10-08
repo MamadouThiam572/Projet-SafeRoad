@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from apps.boitiers.models import Boitier
 from apps.comptes.models import Administrateur
-from apps.core.geo import boite_englobante
+from apps.core.geo import _contours_regions, _dans_polygone, boite_englobante, region_depuis_gps
 from apps.core.permissions import (
     EstAdministrateur,
     EstAdministrateurRegional,
@@ -180,3 +180,42 @@ class BoiteEnglobanteTests(TestCase):
         _, delta_lon_equateur = boite_englobante(0, 0, rayon_metres=1000)
         _, delta_lon_haute_latitude = boite_englobante(60, 0, rayon_metres=1000)
         self.assertGreater(delta_lon_haute_latitude, delta_lon_equateur)
+
+
+class RegionDepuisGpsTests(SimpleTestCase):
+    """Région administrative déduite d'un point GPS à partir des contours officiels
+    (apps/core/data/regions_senegal.geojson)."""
+
+    def test_villes_dans_leur_region(self):
+        villes = {
+            (14.6928, -17.4467): 'dakar',        # Dakar Plateau
+            (14.7167, -17.2667): 'dakar',        # Rufisque
+            (14.7910, -16.9359): 'thies',
+            (14.4167, -16.9667): 'thies',        # Mbour
+            (14.8500, -15.8833): 'diourbel',     # Touba
+            (16.0179, -16.4896): 'saint_louis',
+            (14.1520, -16.0726): 'kaolack',
+            (12.5833, -16.2719): 'ziguinchor',
+            (12.5579, -12.1743): 'kedougou',
+            (15.6559, -13.2554): 'matam',
+            (13.7707, -13.6673): 'tambacounda',
+        }
+        for (latitude, longitude), region in villes.items():
+            with self.subTest(region=region, latitude=latitude):
+                self.assertEqual(region_depuis_gps(latitude, longitude), region)
+
+    def test_hors_du_senegal_aucune_region(self):
+        for latitude, longitude in [(13.4549, -16.5790), (14.5, -18.5), (18.0735, -15.9582)]:  # Banjul, océan, Nouakchott
+            with self.subTest(latitude=latitude):
+                self.assertIsNone(region_depuis_gps(latitude, longitude))
+
+    def test_point_juste_hors_contour_rattache_a_la_region_la_plus_proche(self):
+        # Dans la baie de Hann, juste hors du contour officiel de Dakar (imprécision GPS / tracé).
+        latitude, longitude = 14.6720, -17.4028
+        polygones_dakar = next(p for slug, _, p in _contours_regions() if slug == 'dakar')
+        self.assertFalse(any(_dans_polygone(longitude, latitude, p) for p in polygones_dakar))
+        self.assertEqual(region_depuis_gps(latitude, longitude), 'dakar')
+        self.assertIsNone(region_depuis_gps(14.60, -17.60))  # ~15 km au large : hors tolérance
+
+    def test_coordonnees_absentes(self):
+        self.assertIsNone(region_depuis_gps(None, -17.44))
