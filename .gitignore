@@ -5,6 +5,8 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/**/migrations/__pycache__/
 backend/staticfiles/
+backend/media/
+backend/*.sql
 *.pyc
 
 # Frontend

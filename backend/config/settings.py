@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.statistiques',
     'apps.configuration',
+    'apps.signalements',
 ]
 
 MIDDLEWARE = [
@@ -136,6 +137,8 @@ REST_FRAMEWORK = {
         'login': '5/min',
         # Création de comptes conducteur (AllowAny) : freine les inscriptions en masse par IP.
         'inscription': '10/hour',
+        # Signalements d'un même conducteur (par compte, pas par IP).
+        'signalement': '30/hour',
     },
 }
 
@@ -221,3 +224,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Fichiers envoyés par les utilisateurs (photos de signalements). Volontairement aucun
+# MEDIA_URL servi : chaque photo passe par une vue qui vérifie les droits d'accès.
+MEDIA_ROOT = BASE_DIR / 'media'
