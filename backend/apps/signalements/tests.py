@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 from io import BytesIO
+from pathlib import Path
 
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -207,3 +208,49 @@ class SignalementTests(TestCase):
         signalement = self.creer(self.awa, DAKAR, 'dakar')
         reponse = self.client_pour(self.awa).get(f'/api/v1/signalements/{signalement.id}/incidents-proches/')
         self.assertEqual(reponse.status_code, 403)
+
+    # --- Notification des administrateurs ---
+
+    def test_un_nouveau_signalement_previent_l_admin_de_sa_region(self):
+        self.signaler(self.awa, localite='Médina')
+        signalement = Signalement.objects.get()
+
+        def notifications(utilisateur):
+            return [n for n in self.client_pour(utilisateur).get('/api/v1/notifications/').data
+                    if n['type_notification'] == 'nouveau_signalement']
+
+        recue = notifications(self.admin_dakar)
+        self.assertEqual([n['signalement'] for n in recue], [signalement.id])
+        self.assertIn('Nid-de-poule (Médina)', recue[0]['message'])
+        self.assertEqual(len(notifications(self.super_admin)), 1)
+        self.assertEqual(notifications(self.admin_thies), [])
+
+    # --- Retrait par le conducteur ---
+
+    def test_le_conducteur_retire_son_signalement_non_traite(self):
+        self.signaler(self.awa, photo=image())
+        signalement = Signalement.objects.get()
+        fichier = Path(signalement.photo.path)
+        self.assertTrue(fichier.exists())
+
+        reponse = self.client_pour(self.awa).delete(f'/api/v1/signalements/{signalement.id}/')
+
+        self.assertEqual(reponse.status_code, 204)
+        self.assertFalse(Signalement.objects.exists())
+        self.assertFalse(fichier.exists())  # la photo ne reste pas sur le disque
+
+    def test_un_signalement_pris_en_charge_ne_peut_plus_etre_retire(self):
+        signalement = self.creer(self.awa, DAKAR, 'dakar')
+        self.changer(self.admin_dakar, signalement, 'en_verification')
+        reponse = self.client_pour(self.awa).delete(f'/api/v1/signalements/{signalement.id}/')
+        self.assertEqual(reponse.status_code, 400)
+        self.assertTrue(Signalement.objects.filter(pk=signalement.pk).exists())
+
+    def test_personne_d_autre_ne_peut_retirer_un_signalement(self):
+        signalement = self.creer(self.awa, DAKAR, 'dakar')
+        url = f'/api/v1/signalements/{signalement.id}/'
+        self.assertEqual(self.client_pour(self.moussa).delete(url).status_code, 404)
+        for utilisateur in (self.admin_dakar, self.super_admin, self.anaser):
+            with self.subTest(role=utilisateur.role):
+                self.assertEqual(self.client_pour(utilisateur).delete(url).status_code, 403)
+        self.assertTrue(Signalement.objects.filter(pk=signalement.pk).exists())

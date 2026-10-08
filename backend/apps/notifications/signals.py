@@ -3,6 +3,7 @@ from django.dispatch import receiver
 
 from apps.boitiers.models import HistoriqueSync
 from apps.incidents.models import Incident
+from apps.signalements.models import Signalement
 from apps.zones.models import Zone
 
 from .models import NotificationAdmin
@@ -35,4 +36,17 @@ def notifier_sync_echouee(sender, instance, created, **kwargs):
             type_notification=NotificationAdmin.TypeNotification.SYNC_ECHOUEE,
             boitier=instance.boitier,
             message=f"Échec de synchronisation pour le boîtier {instance.boitier_id}: {instance.message_erreur}",
+        )
+
+
+@receiver(post_save, sender=Signalement)
+def notifier_nouveau_signalement(sender, instance, created, **kwargs):
+    # Diffusion : le filtrage régional des notifications (voir views.py) la réserve à
+    # l'administrateur de la région du signalement et au super administrateur.
+    if created:
+        lieu = instance.localite or instance.get_region_display()
+        NotificationAdmin.objects.create(
+            type_notification=NotificationAdmin.TypeNotification.NOUVEAU_SIGNALEMENT,
+            signalement=instance,
+            message=f"Nouveau signalement à vérifier : {instance.get_type_danger_display()} ({lieu}).",
         )

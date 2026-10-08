@@ -22,10 +22,11 @@ class NotificationAdminViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         if getattr(utilisateur, 'role', None) == 'admin':
             # Administrateur régional : seulement les diffusions de sa région (même règle que
             # FiltreRegional — sans région, aucune), plus celles qui ne visent aucun objet.
-            sans_objet = Q(incident__isnull=True, zone__isnull=True, boitier__isnull=True)
+            sans_objet = Q(incident__isnull=True, zone__isnull=True, boitier__isnull=True, signalement__isnull=True)
             region = utilisateur.region
             de_sa_region = (
                 Q(incident__boitier__region=region) | Q(zone__region=region) | Q(boitier__region=region)
+                | Q(signalement__region=region)
                 if region else Q(pk__in=[])
             )
             diffusions &= sans_objet | de_sa_region
@@ -34,7 +35,7 @@ class NotificationAdminViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         return (
             NotificationAdmin.objects.filter(Q(destinataire=utilisateur) | diffusions)
             .annotate(lue_par_moi=Exists(lue_par_moi))
-            .select_related('incident', 'zone', 'boitier')
+            .select_related('incident', 'zone', 'boitier', 'signalement')
         )
 
     @action(detail=True, methods=['patch'], url_path='lue')

@@ -13,7 +13,8 @@ class NotificationAdminSerializer(serializers.ModelSerializer):
         model = NotificationAdmin
         exclude = ['lue_par']
         read_only_fields = [
-            'id', 'destinataire', 'type_notification', 'incident', 'zone', 'boitier', 'message', 'date_creation',
+            'id', 'destinataire', 'type_notification', 'incident', 'zone', 'boitier', 'signalement',
+            'message', 'date_creation',
         ]
 
     def get_lue(self, obj):

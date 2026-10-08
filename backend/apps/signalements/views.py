@@ -28,10 +28,11 @@ MAX_INCIDENTS_PROCHES = 50
 
 
 class SignalementViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
-                         viewsets.GenericViewSet):
+                         mixins.DestroyModelMixin, viewsets.GenericViewSet):
     """Conducteur : crée et consulte ses propres signalements. Administrateur régional : ceux
     de sa région (FiltreRegional sur `region`, déduite du GPS). Super admin : tous. ANASER :
-    tous, en lecture seule et sans identité du conducteur."""
+    tous, en lecture seule et sans identité du conducteur. Le conducteur peut retirer son
+    signalement tant qu'aucun administrateur ne l'a pris en charge."""
 
     pagination_class = PaginationListeGestion
     filter_backends = [FiltreRegional]
@@ -39,7 +40,7 @@ class SignalementViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.
     throttle_scope = 'signalement'
 
     def get_permissions(self):
-        if self.action == 'create':
+        if self.action in ('create', 'destroy'):
             return [EstConducteur()]
         if self.action in ('list', 'retrieve', 'photo'):
             return [(EstConducteur | EstAdminOuAnaser)()]
@@ -73,6 +74,13 @@ class SignalementViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.
         serializer.is_valid(raise_exception=True)
         signalement = serializer.save(conducteur=request.user, boitier=request.user.boitier)
         return Response(SignalementSerializer(signalement, context={'request': request}).data, status=201)
+
+    def perform_destroy(self, instance):
+        if instance.statut != Signalement.Statut.A_VERIFIER:
+            raise ValidationError("Ce signalement est déjà pris en charge : il ne peut plus être retiré.")
+        if instance.photo:
+            instance.photo.delete(save=False)
+        instance.delete()
 
     @action(detail=True, methods=['get'])
     def photo(self, request, pk=None):
