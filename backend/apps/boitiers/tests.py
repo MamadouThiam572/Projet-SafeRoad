@@ -31,7 +31,7 @@ class BoitierPositionTests(TestCase):
             rayon_metres=100,
             nombre_incidents=5,
             niveau_danger=niveau_danger,
-            statut_validation=Zone.StatutValidation.VALIDEE,
+            statut_validation=Zone.StatutValidation.RECONNUE,
         )
 
     def test_position_pres_d_une_zone_declenche_une_alerte(self):
@@ -67,7 +67,7 @@ class BoitierPositionTests(TestCase):
     def test_zone_non_validee_est_ignoree(self):
         Zone.objects.create(
             latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=100,
-            statut_validation=Zone.StatutValidation.EN_ATTENTE,
+            statut_validation=Zone.StatutValidation.PROPOSEE,
         )
         client = APIClient()
 
@@ -279,6 +279,41 @@ class BoitierRegionEtStatutTests(TestCase):
         self.assertEqual(reponse.status_code, 400)
         self.assertIn('region', reponse.data)
 
+    def test_region_absente_est_rejetee_pour_un_super_admin(self):
+        # Une nouvelle création sans région serait invisible pour tout administrateur
+        # régional (FiltreRegional) sans que personne ne s'en aperçoive — désormais
+        # explicitement refusée avec une erreur claire plutôt que silencieusement acceptée
+        # à NULL. Pour un administrateur régional, la région est de toute façon substituée
+        # avant validation (voir test_creation_via_api_sans_region_fournie_...) : cette
+        # contrainte ne mord donc que sur le super administrateur.
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.post('/api/v1/boitiers/', {
+            'proprietaire_nom': 'Transports Bâ',
+        }, format='json')
+        self.assertEqual(reponse.status_code, 400)
+        self.assertIn('region', reponse.data)
+
+    def test_region_vide_est_rejetee_pour_un_super_admin(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.post('/api/v1/boitiers/', {
+            'proprietaire_nom': 'Transports Bâ', 'region': '',
+        }, format='json')
+        self.assertEqual(reponse.status_code, 400)
+        self.assertIn('region', reponse.data)
+
+    def test_boitier_existant_sans_region_reste_lisible_et_modifiable(self):
+        # La contrainte "région obligatoire" ne s'applique qu'à la création (serializer) —
+        # jamais au modèle : un boîtier historique region=None doit rester consultable et
+        # modifiable sur ses autres champs sans qu'on soit forcé de lui inventer une région.
+        boitier = Boitier.objects.create()
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.patch(f'/api/v1/boitiers/{boitier.id}/', {
+            'statut': Boitier.Statut.MAINTENANCE,
+        }, format='json')
+        self.assertEqual(reponse.status_code, 200)
+        self.assertIsNone(reponse.data['region'])
+        self.assertEqual(reponse.data['statut'], 'maintenance')
+
 
 class BoitierFiltrageRegionalTests(TestCase):
     """Étape 4A : le ViewSet des boîtiers applique désormais FiltreRegional (voir
@@ -396,9 +431,29 @@ class BoitierFiltrageRegionalTests(TestCase):
         self.assertEqual(reponse.status_code, 201)
         self.assertEqual(reponse.data['region'], 'kolda')
 
-    # --- I. ANASER : comportement inchangé ---
+    # --- I. ANASER : lecture seule nationale, sans données personnelles ---
 
-    def test_anaser_n_a_toujours_pas_acces_aux_boitiers(self):
+    def test_anaser_consulte_tous_les_boitiers_sans_donnees_personnelles(self):
         self.client.force_authenticate(user=self.anaser)
         reponse = self.client.get('/api/v1/boitiers/')
-        self.assertEqual(reponse.status_code, 403)
+        self.assertEqual(reponse.status_code, 200)
+        boitiers = reponse.data['results'] if isinstance(reponse.data, dict) else reponse.data
+        self.assertEqual(len(boitiers), Boitier.objects.count())
+        champs_interdits = {
+            'proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation',
+            'derniere_latitude', 'derniere_longitude',
+        }
+        for boitier in boitiers:
+            self.assertFalse(champs_interdits & boitier.keys())
+            self.assertIn('nombre_incidents', boitier)
+
+    def test_anaser_ne_peut_ni_creer_ni_modifier_ni_supprimer_un_boitier(self):
+        self.client.force_authenticate(user=self.anaser)
+        boitier = Boitier.objects.first()
+        self.assertEqual(self.client.post('/api/v1/boitiers/', {'region': 'dakar'}, format='json').status_code, 403)
+        self.assertEqual(
+            self.client.patch(f'/api/v1/boitiers/{boitier.id}/', {'statut': 'inactif'}, format='json').status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete(f'/api/v1/boitiers/{boitier.id}/').status_code, 403)
+        self.assertEqual(self.client.post(f'/api/v1/boitiers/{boitier.id}/regenerer-cle/').status_code, 403)

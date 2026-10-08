@@ -1,6 +1,7 @@
 import secrets
 
 from django.core.cache import cache
+from django.db.models import Count
 from django.utils import timezone
 from geopy.distance import geodesic
 from rest_framework import viewsets
@@ -13,23 +14,23 @@ from apps.configuration.models import ConfigurationSysteme
 from apps.core.cache_keys import CACHE_CLE_ZONES_ACTIVES, CACHE_TTL_ZONES_ACTIVES_SECONDES
 from apps.core.geo import boite_englobante
 from apps.core.pagination import PaginationListeGestion
-from apps.core.permissions import EstAdministrateur, EstBoitier
+from apps.core.permissions import EstAdministrateur, EstAnaser, EstBoitier
 from apps.core.regionalisation import FiltreRegional
 from apps.zones.models import Zone
 
 from .models import Boitier
-from .serializers import BoitierCreationSerializer, BoitierSerializer, PositionSerializer
+from .serializers import BoitierAnaserSerializer, BoitierCreationSerializer, BoitierSerializer, PositionSerializer
 
 
 def _zones_validees_actives():
-    """Liste des zones validées/actives, en cache court : elle ne change qu'à la
-    validation d'une zone par un admin, pas à chaque position remontée par un boîtier
-    — qui est le chemin le plus sollicité du système (un appel par boîtier et par
-    intervalle de synchronisation)."""
+    """Liste des zones reconnues par l'ANASER et actives (seules zones publiques), en cache
+    court : elle ne change qu'à un changement de statut d'une zone, pas à chaque position
+    remontée par un boîtier — qui est le chemin le plus sollicité du système (un appel par
+    boîtier et par intervalle de synchronisation)."""
     zones = cache.get(CACHE_CLE_ZONES_ACTIVES)
     if zones is None:
         zones = list(
-            Zone.objects.filter(statut_validation=Zone.StatutValidation.VALIDEE, actif=True)
+            Zone.objects.filter(statut_validation=Zone.StatutValidation.RECONNUE, actif=True)
             .only('id', 'latitude_centre', 'longitude_centre', 'niveau_danger')
         )
         cache.set(CACHE_CLE_ZONES_ACTIVES, zones, CACHE_TTL_ZONES_ACTIVES_SECONDES)
@@ -41,8 +42,8 @@ class BoitierViewSet(viewsets.ModelViewSet):
     permission_classes = [EstAdministrateur]
     pagination_class = PaginationListeGestion
     # Super admin : tous les boîtiers. Administrateur régional : uniquement ceux de
-    # request.user.region (queryset vide si region=None). ANASER n'a de toute façon pas
-    # accès à ce ViewSet (EstAdministrateur ne couvre pas ce rôle) — comportement inchangé.
+    # request.user.region (queryset vide si region=None). ANASER : lecture seule nationale,
+    # limitée aux informations non personnelles (voir get_permissions/BoitierAnaserSerializer).
     # S'applique automatiquement à list/retrieve/update/partial_update/destroy (et à
     # regenerer_cle, qui passe par get_object()) puisque tous appellent get_queryset() via
     # filter_queryset() — un boîtier d'une autre région n'existe simplement pas dans le
@@ -50,7 +51,29 @@ class BoitierViewSet(viewsets.ModelViewSet):
     filter_backends = [FiltreRegional]
     region_lookup_field = 'region'
 
+    def _est_anaser(self):
+        return getattr(self.request.user, 'role', None) == 'anaser'
+
+    def get_permissions(self):
+        # ANASER (acteur institutionnel) consulte les boîtiers pour l'analyse, sans jamais
+        # les gérer : list/retrieve seulement. Toute autre action garde sa permission
+        # habituelle (EstAdministrateur, ou EstBoitier pour `position`).
+        if self.action in ('list', 'retrieve') and self._est_anaser():
+            return [EstAnaser()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self._est_anaser():
+            queryset = queryset.annotate(
+                nombre_incidents=Count('incidents', distinct=True),
+                nombre_alertes_proximite=Count('alertes_proximite', distinct=True),
+            )
+        return queryset
+
     def get_serializer_class(self):
+        if self._est_anaser():
+            return BoitierAnaserSerializer
         if self.action == 'create':
             return BoitierCreationSerializer
         return BoitierSerializer

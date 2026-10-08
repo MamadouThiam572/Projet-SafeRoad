@@ -1,4 +1,5 @@
-from django.db.models import Q
+from django.contrib.auth import get_user_model
+from django.db.models import Exists, OuterRef, Q
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,16 +15,34 @@ class NotificationAdminViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     permission_classes = [EstAdministrateur]
 
     def get_queryset(self):
+        utilisateur = self.request.user
         # Un admin ne voit que ses notifications ciblées + les diffusions globales
         # (destinataire=None) — pas les notifications adressées à d'autres admins.
+        diffusions = Q(destinataire__isnull=True)
+        if getattr(utilisateur, 'role', None) == 'admin':
+            # Administrateur régional : seulement les diffusions de sa région (même règle que
+            # FiltreRegional — sans région, aucune), plus celles qui ne visent aucun objet.
+            sans_objet = Q(incident__isnull=True, zone__isnull=True, boitier__isnull=True)
+            region = utilisateur.region
+            de_sa_region = (
+                Q(incident__boitier__region=region) | Q(zone__region=region) | Q(boitier__region=region)
+                if region else Q(pk__in=[])
+            )
+            diffusions &= sans_objet | de_sa_region
+
+        lue_par_moi = get_user_model().objects.filter(pk=utilisateur.pk, notifications_lues=OuterRef('pk'))
         return (
-            NotificationAdmin.objects.filter(Q(destinataire=self.request.user) | Q(destinataire__isnull=True))
+            NotificationAdmin.objects.filter(Q(destinataire=utilisateur) | diffusions)
+            .annotate(lue_par_moi=Exists(lue_par_moi))
             .select_related('incident', 'zone', 'boitier')
         )
 
     @action(detail=True, methods=['patch'], url_path='lue')
     def marquer_lue(self, request, pk=None):
         notification = self.get_object()
-        notification.lue = True
-        notification.save(update_fields=['lue'])
-        return Response(NotificationAdminSerializer(notification).data)
+        if notification.destinataire_id:
+            notification.lue = True
+            notification.save(update_fields=['lue'])
+        else:
+            notification.lue_par.add(request.user)
+        return Response(NotificationAdminSerializer(self.get_object()).data)

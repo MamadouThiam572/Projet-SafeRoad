@@ -9,6 +9,9 @@ class SafeRoadTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
+        # Distingue ce token de ceux émis pour Conducteur (autre table, autre pk) —
+        # voir apps.core.authentication.AdministrateurJWTAuthentication/ConducteurJWTAuthentication.
+        token['type_compte'] = 'administrateur'
         token['email'] = user.email
         token['role'] = user.role
         token['nom'] = user.nom

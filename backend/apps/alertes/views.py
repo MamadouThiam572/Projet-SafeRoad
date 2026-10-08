@@ -27,7 +27,10 @@ class AlerteViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
     @action(detail=True, methods=['patch'])
     def traiter(self, request, pk=None):
         alerte = self.get_object()
-        alerte.statut = request.data.get('statut', Alerte.Statut.TRAITEE)
+        nouveau_statut = request.data.get('statut', Alerte.Statut.TRAITEE)
+        if nouveau_statut not in Alerte.Statut.values:
+            return Response({'detail': 'statut invalide.'}, status=400)
+        alerte.statut = nouveau_statut
         alerte.traitee_par = request.user
         alerte.traitee_le = timezone.now()
         alerte.save(update_fields=['statut', 'traitee_par', 'traitee_le'])

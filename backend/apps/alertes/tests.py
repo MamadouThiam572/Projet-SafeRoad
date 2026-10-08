@@ -126,6 +126,13 @@ class AlerteFiltrageRegionalTests(TestCase):
         self.assertEqual(self.alerte_thies.statut, 'nouvelle')  # inchangée
         self.assertIsNone(self.alerte_thies.traitee_par)
 
+    def test_traiter_refuse_un_statut_inconnu(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_dakar.id}/traiter/', {'statut': 'xyz'}, format='json')
+        self.assertEqual(reponse.status_code, 400)
+        self.alerte_dakar.refresh_from_db()
+        self.assertEqual(self.alerte_dakar.statut, 'nouvelle')
+
     # --- D. Création : aucune voie humaine/API n'existe ---
 
     def test_aucune_action_de_creation_n_existe_pour_les_alertes(self):

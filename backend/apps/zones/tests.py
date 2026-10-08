@@ -67,7 +67,7 @@ class GenererZonesDepuisIncidentsTests(TestCase):
         zone = Zone.objects.get()
         self.assertEqual(zone.nombre_incidents, 3)
         self.assertEqual(zone.niveau_danger, Zone.NiveauDanger.NORMALE)
-        self.assertEqual(zone.statut_validation, Zone.StatutValidation.EN_ATTENTE)
+        self.assertEqual(zone.statut_validation, Zone.StatutValidation.PROPOSEE)
 
     def test_cluster_avec_incidents_critiques_devient_critique(self):
         # score = nombre_incidents + 2*nombre_critiques ; viser >= 15.
@@ -101,14 +101,14 @@ class GenererZonesDepuisIncidentsTests(TestCase):
             self._creer_incident(decalage=0.0002 * i)
         generer_zones_depuis_incidents()
         zone = Zone.objects.get()
-        zone.statut_validation = Zone.StatutValidation.VALIDEE
+        zone.statut_validation = Zone.StatutValidation.RECONNUE
         zone.save(update_fields=['statut_validation'])
 
         self._creer_incident(decalage=0.0002)
         generer_zones_depuis_incidents()
 
         zone.refresh_from_db()
-        self.assertEqual(zone.statut_validation, Zone.StatutValidation.VALIDEE)
+        self.assertEqual(zone.statut_validation, Zone.StatutValidation.RECONNUE)
 
 
 class RegionMajoritaireTests(TestCase):
@@ -226,11 +226,11 @@ class ZoneFiltrageRegionalTests(TestCase):
 
         cls.zone_dakar = Zone.objects.create(
             latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=300,
-            region='dakar', statut_validation=Zone.StatutValidation.VALIDEE, actif=True,
+            region='dakar', statut_validation=Zone.StatutValidation.RECONNUE, actif=True,
         )
         cls.zone_thies = Zone.objects.create(
             latitude_centre=LATITUDE_BASE + 1, longitude_centre=LONGITUDE_BASE + 1, rayon_metres=300,
-            region='thies', statut_validation=Zone.StatutValidation.VALIDEE, actif=True,
+            region='thies', statut_validation=Zone.StatutValidation.RECONNUE, actif=True,
         )
 
     def setUp(self):
@@ -258,7 +258,7 @@ class ZoneFiltrageRegionalTests(TestCase):
     def test_admin_regional_ne_peut_pas_valider_une_zone_d_une_autre_region(self):
         self.client.force_authenticate(user=self.admin_dakar)
         reponse = self.client.patch(
-            f'/api/v1/zones/{self.zone_thies.id}/valider/', {'statut_validation': 'validee'}, format='json',
+            f'/api/v1/zones/{self.zone_thies.id}/statut/', {'statut_validation': 'validee_technique'}, format='json',
         )
         self.assertEqual(reponse.status_code, 404)
 
@@ -289,3 +289,143 @@ class ZoneFiltrageRegionalTests(TestCase):
         self.assertEqual(reponse.status_code, 200)
         ids = {z['id'] for z in reponse.data}
         self.assertEqual(ids, {self.zone_dakar.id, self.zone_thies.id})
+
+
+class ZoneGestionSuperAdminTests(TestCase):
+    """Le super administrateur doit voir et pouvoir valider une zone en attente (il ne la
+    voyait pas : seuls admin/anaser étaient exemptés du filtre public). Le recalcul national
+    des zones lui est réservé."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-admin-attente@test.sn', password='x', nom='Fall', prenom='Aida',
+            role=Administrateur.Role.SUPER_ADMIN,
+        )
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='admin-dakar-attente@test.sn', password='x', nom='Diop', prenom='Cheikh',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.zone_en_attente = Zone.objects.create(
+            latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=300, region='dakar',
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_super_admin_voit_une_zone_en_attente(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.get('/api/v1/zones/')
+        self.assertEqual(reponse.status_code, 200)
+        self.assertIn(self.zone_en_attente.id, {z['id'] for z in reponse.data})
+
+    def test_super_admin_peut_valider_techniquement_une_zone_en_attente(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.patch(
+            f'/api/v1/zones/{self.zone_en_attente.id}/statut/', {'statut_validation': 'validee_technique'},
+            format='json',
+        )
+        self.assertEqual(reponse.status_code, 200)
+        self.zone_en_attente.refresh_from_db()
+        self.assertEqual(self.zone_en_attente.statut_validation, Zone.StatutValidation.VALIDEE_TECHNIQUEMENT)
+
+    def test_admin_regional_ne_peut_pas_lancer_le_recalcul_national(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.post('/api/v1/zones/generer/')
+        self.assertEqual(reponse.status_code, 403)
+
+    def test_super_admin_peut_lancer_le_recalcul_national(self):
+        self.client.force_authenticate(user=self.super_admin)
+        reponse = self.client.post('/api/v1/zones/generer/')
+        self.assertEqual(reponse.status_code, 200)
+
+
+class WorkflowValidationZoneTests(TestCase):
+    """Validation en deux étapes : technique (admin régional / super admin), puis
+    institutionnelle (ANASER). Chaque décision est tracée dans HistoriqueStatutZone."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-workflow@test.sn', password='x', nom='Fall', prenom='Aida',
+            role=Administrateur.Role.SUPER_ADMIN,
+        )
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='dakar-workflow@test.sn', password='x', nom='Diop', prenom='Cheikh',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.anaser = Administrateur.objects.create_user(
+            email='anaser-workflow@test.sn', password='x', nom='Diallo', prenom='Assane',
+            role=Administrateur.Role.ANASER,
+        )
+
+    def setUp(self):
+        self.zone = Zone.objects.create(
+            latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=300, region='dakar',
+        )
+
+    def changer(self, utilisateur, statut, commentaire=''):
+        client = APIClient()
+        client.force_authenticate(user=utilisateur)
+        return client.patch(
+            f'/api/v1/zones/{self.zone.id}/statut/',
+            {'statut_validation': statut, 'commentaire': commentaire}, format='json',
+        )
+
+    def amener_jusqu_a_anaser(self):
+        for statut in ('en_verification', 'validee_technique', 'soumise_anaser'):
+            self.assertEqual(self.changer(self.admin_dakar, statut).status_code, 200)
+
+    def test_parcours_complet_jusqu_a_la_publication(self):
+        public = APIClient()
+        self.amener_jusqu_a_anaser()
+        self.assertNotIn(self.zone.id, {z['id'] for z in public.get('/api/v1/zones/').data})
+
+        self.assertEqual(self.changer(self.anaser, 'reconnue').status_code, 200)
+        self.assertIn(self.zone.id, {z['id'] for z in public.get('/api/v1/zones/').data})
+
+    def test_l_historique_trace_chaque_decision(self):
+        self.amener_jusqu_a_anaser()
+        self.changer(self.anaser, 'reconnue')
+        client = APIClient()
+        client.force_authenticate(user=self.super_admin)
+        historique = client.get(f'/api/v1/zones/{self.zone.id}/historique/').data
+        self.assertEqual(
+            [(h['statut_nouveau'], h['role_acteur']) for h in historique],
+            [('en_verification', 'admin'), ('validee_technique', 'admin'),
+             ('soumise_anaser', 'admin'), ('reconnue', 'anaser')],
+        )
+        self.assertEqual(historique[-1]['acteur'], self.anaser.id)
+
+    def test_anaser_ne_peut_pas_faire_la_validation_technique(self):
+        self.assertEqual(self.changer(self.anaser, 'validee_technique').status_code, 403)
+
+    def test_seul_l_anaser_peut_reconnaitre_une_zone(self):
+        self.amener_jusqu_a_anaser()
+        self.assertEqual(self.changer(self.admin_dakar, 'reconnue').status_code, 403)
+        self.assertEqual(self.changer(self.super_admin, 'reconnue').status_code, 403)
+
+    def test_on_ne_peut_pas_sauter_l_etape_technique(self):
+        reponse = self.changer(self.anaser, 'reconnue')
+        self.assertEqual(reponse.status_code, 400)
+        self.zone.refresh_from_db()
+        self.assertEqual(self.zone.statut_validation, Zone.StatutValidation.PROPOSEE)
+
+    def test_un_rejet_doit_etre_motive(self):
+        self.assertEqual(self.changer(self.admin_dakar, 'rejetee').status_code, 400)
+        self.assertEqual(self.changer(self.admin_dakar, 'rejetee', 'Doublon de la zone voisine').status_code, 200)
+
+    def test_anaser_peut_demander_un_complement_motive(self):
+        self.amener_jusqu_a_anaser()
+        self.assertEqual(self.changer(self.anaser, 'en_verification').status_code, 400)
+        reponse = self.changer(self.anaser, 'en_verification', 'Préciser les observations terrain')
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.data['statut_validation'], 'en_verification')
+
+    def test_seul_le_super_admin_archive(self):
+        self.changer(self.admin_dakar, 'rejetee', 'Données incohérentes')
+        self.assertEqual(self.changer(self.admin_dakar, 'archivee').status_code, 403)
+        self.assertEqual(self.changer(self.super_admin, 'archivee').status_code, 200)
+
+    def test_statut_inconnu_refuse(self):
+        self.assertEqual(self.changer(self.admin_dakar, 'validee').status_code, 400)

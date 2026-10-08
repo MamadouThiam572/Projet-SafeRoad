@@ -20,11 +20,11 @@ def notifier_incident_critique(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=Zone)
 def notifier_zone_a_valider(sender, instance, created, **kwargs):
-    if created and instance.statut_validation == Zone.StatutValidation.EN_ATTENTE:
+    if created and instance.statut_validation == Zone.StatutValidation.PROPOSEE:
         NotificationAdmin.objects.create(
             type_notification=NotificationAdmin.TypeNotification.ZONE_A_VALIDER,
             zone=instance,
-            message=f"Nouvelle zone accidentogène détectée ({instance.nombre_incidents} incidents) à valider.",
+            message=f"Nouvelle zone accidentogène détectée ({instance.nombre_incidents} incidents) à vérifier.",
         )
 
 

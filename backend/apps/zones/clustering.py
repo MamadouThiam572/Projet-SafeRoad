@@ -56,9 +56,9 @@ def _region_majoritaire(incidents_du_cluster, latitude_centre, longitude_centre)
 def generer_zones_depuis_incidents():
     """Reclustère l'ensemble des incidents géolocalisés en zones accidentogènes (DBSCAN/haversine).
 
-    Les zones déjà validées/rejetées par un admin ne sont pas recréées : si un nouveau cluster
+    Les zones déjà engagées dans le workflow de validation ne sont pas recréées : si un nouveau cluster
     correspond spatialement à une zone existante, ses statistiques sont mises à jour sans toucher
-    à son statut_validation. Sinon une nouvelle zone EN_ATTENTE est créée.
+    à son statut_validation. Sinon une nouvelle zone PROPOSEE est créée.
     """
     config = ConfigurationSysteme.instance()
     # select_related('boitier') : la région de chaque incident (pour la région majoritaire

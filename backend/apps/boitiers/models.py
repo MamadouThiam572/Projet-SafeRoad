@@ -28,8 +28,10 @@ class Boitier(models.Model):
     numero_immatriculation = models.CharField(max_length=30, blank=True)
     # Région administrative d'affectation du boîtier — distincte de sa position GPS réelle
     # (derniere_latitude/longitude ci-dessous) : un boîtier affecté à Dakar peut circuler
-    # ailleurs. Jamais déduite automatiquement du GPS. Nullable tant qu'aucune stratégie
-    # d'initialisation fiable des données existantes n'a été définie (pas de valeur arbitraire).
+    # ailleurs. Jamais déduite automatiquement du GPS. Reste nullable au niveau du modèle
+    # pour les boîtiers historiques (créés avant le filtrage régional, corrigés une fois via
+    # la commande corriger_region_donnees_test) ; toute création via l'API l'exige désormais
+    # (voir BoitierCreationSerializer.extra_kwargs).
     region = models.CharField(max_length=20, choices=Region.choices, null=True, blank=True)
     derniere_latitude = models.FloatField(null=True, blank=True)
     derniere_longitude = models.FloatField(null=True, blank=True)

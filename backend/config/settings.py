@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'apps.core',
     'apps.comptes',
+    'apps.conducteurs',
     'apps.boitiers',
     'apps.incidents',
     'apps.zones',
@@ -116,7 +117,8 @@ AUTH_USER_MODEL = 'comptes.Administrateur'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.core.authentication.AdministrateurJWTAuthentication',
+        'apps.core.authentication.ConducteurJWTAuthentication',
         'apps.core.authentication.BoitierAPIKeyAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
@@ -132,6 +134,8 @@ REST_FRAMEWORK = {
         # Login uniquement (apps.core.throttling.LoginRateThrottle) : par IP, pas par compte
         # — un attaquant ne peut pas contourner la limite en changeant l'email essayé.
         'login': '5/min',
+        # Création de comptes conducteur (AllowAny) : freine les inscriptions en masse par IP.
+        'inscription': '10/hour',
     },
 }
 

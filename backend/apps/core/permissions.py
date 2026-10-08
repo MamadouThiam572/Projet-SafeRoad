@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from apps.boitiers.models import Boitier
+from apps.conducteurs.models import Conducteur
 
 
 def _a_pour_role(request, *roles):
@@ -14,6 +15,11 @@ def _a_pour_role(request, *roles):
 class EstBoitier(BasePermission):
     def has_permission(self, request, view):
         return isinstance(request.user, Boitier)
+
+
+class EstConducteur(BasePermission):
+    def has_permission(self, request, view):
+        return isinstance(request.user, Conducteur)
 
 
 class EstSuperAdministrateur(BasePermission):

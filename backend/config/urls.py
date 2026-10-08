@@ -20,6 +20,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 api_v1 = [
     path('', include('apps.comptes.urls')),
+    path('', include('apps.conducteurs.urls')),
     path('', include('apps.boitiers.urls')),
     path('', include('apps.incidents.urls')),
     path('', include('apps.zones.urls')),
