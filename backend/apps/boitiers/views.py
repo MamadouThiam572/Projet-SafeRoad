@@ -21,6 +21,9 @@ from apps.zones.models import Zone
 from .models import Boitier
 from .serializers import BoitierAnaserSerializer, BoitierCreationSerializer, BoitierSerializer, PositionSerializer
 
+# Écart toléré entre l'horloge GPS du boîtier et celle du serveur.
+DERIVE_HORLOGE_TOLEREE_MINUTES = 5
+
 
 def _zones_validees_actives():
     """Liste des zones reconnues par l'ANASER et actives (seules zones publiques), en cache
@@ -120,13 +123,20 @@ class BoitierViewSet(viewsets.ModelViewSet):
 
         boitier.derniere_latitude = latitude
         boitier.derniere_longitude = longitude
-        boitier.derniere_localisation_maj = timezone.now()
+        maintenant = timezone.now()
+        boitier.derniere_localisation_maj = maintenant
+        horodatage = serializer.validated_data.get('horodatage')
+        # Un module GPS sans fix peut renvoyer une date fantaisiste (année 2080, etc.) : une date
+        # dans le futur n'est pas gardée, plutôt que de fausser la latence affichée.
+        if horodatage and horodatage > maintenant + timezone.timedelta(minutes=DERIVE_HORLOGE_TOLEREE_MINUTES):
+            horodatage = None
+        boitier.derniere_position_horodatage = horodatage
         boitier.derniere_vitesse_gps = serializer.validated_data.get('vitesse_gps')
         boitier.dernier_hdop = serializer.validated_data.get('hdop')
         boitier.dernier_nombre_satellites = serializer.validated_data.get('nombre_satellites')
         boitier.save(update_fields=[
             'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
-            'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
+            'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites', 'derniere_position_horodatage',
         ])
 
         config = ConfigurationSysteme.instance()

@@ -40,6 +40,9 @@ class Boitier(models.Model):
     derniere_vitesse_gps = models.FloatField(null=True, blank=True, help_text="km/h")
     dernier_hdop = models.FloatField(null=True, blank=True)
     dernier_nombre_satellites = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Date/heure GPS de cette position, envoyée par le boîtier. Comparée à
+    # derniere_localisation_maj (heure de réception serveur), elle donne la latence de transmission.
+    derniere_position_horodatage = models.DateTimeField(null=True, blank=True)
     statut = models.CharField(max_length=15, choices=Statut.choices, default=Statut.ACTIF)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_maj = models.DateTimeField(auto_now=True)

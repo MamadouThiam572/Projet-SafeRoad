@@ -8,6 +8,7 @@ from apps.core.regions import Region
 from apps.zones.models import Zone
 
 from .models import Boitier
+from .serializers import BoitierSerializer
 
 LATITUDE_BASE, LONGITUDE_BASE = 14.6928, -17.4467
 
@@ -115,6 +116,29 @@ class BoitierPositionTests(TestCase):
             (self.boitier.derniere_vitesse_gps, self.boitier.dernier_hdop, self.boitier.dernier_nombre_satellites),
             (48.2, 1.1, 8),
         )
+
+    def test_la_date_gps_de_la_position_donne_la_latence(self):
+        client = APIClient()
+        mesure = timezone.now() - timezone.timedelta(seconds=2)
+        client.post('/api/v1/boitiers/position/', {
+            'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE, 'horodatage': mesure.isoformat(),
+        }, **self.headers)
+        self.boitier.refresh_from_db()
+        self.assertEqual(self.boitier.derniere_position_horodatage, mesure)
+        latence = BoitierSerializer(self.boitier).data['latence_ms']
+        self.assertGreaterEqual(latence, 2000)
+        self.assertLess(latence, 60_000)
+
+    def test_une_date_gps_dans_le_futur_est_ignoree(self):
+        client = APIClient()
+        futur = timezone.now() + timezone.timedelta(days=365 * 50)
+        reponse = client.post('/api/v1/boitiers/position/', {
+            'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE, 'horodatage': futur.isoformat(),
+        }, **self.headers)
+        self.assertEqual(reponse.status_code, 200)
+        self.boitier.refresh_from_db()
+        self.assertIsNone(self.boitier.derniere_position_horodatage)
+        self.assertEqual(self.boitier.derniere_latitude, LATITUDE_BASE)  # la position reste acceptée
 
     def test_cooldown_empeche_une_deuxieme_alerte_immediate(self):
         self._creer_zone_validee()
