@@ -103,6 +103,19 @@ class BoitierPositionTests(TestCase):
         self.assertTrue(reponse.data['alerte_proximite'])
         self.assertEqual(reponse.data['zone'], str(zone.id))
 
+    def test_la_position_enregistre_les_donnees_gps_du_boitier(self):
+        client = APIClient()
+        reponse = client.post('/api/v1/boitiers/position/', {
+            'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE,
+            'vitesse_gps': 48.2, 'hdop': 1.1, 'nombre_satellites': 8,
+        }, **self.headers)
+        self.assertEqual(reponse.status_code, 200)
+        self.boitier.refresh_from_db()
+        self.assertEqual(
+            (self.boitier.derniere_vitesse_gps, self.boitier.dernier_hdop, self.boitier.dernier_nombre_satellites),
+            (48.2, 1.1, 8),
+        )
+
     def test_cooldown_empeche_une_deuxieme_alerte_immediate(self):
         self._creer_zone_validee()
         client = APIClient()

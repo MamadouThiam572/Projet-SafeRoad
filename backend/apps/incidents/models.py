@@ -36,6 +36,14 @@ class Incident(models.Model):
     gyro_z = models.FloatField(null=True, blank=True)
     distance_hcsr04 = models.FloatField(null=True, blank=True)
 
+    # Données du module GPS au moment de l'incident.
+    vitesse_gps = models.FloatField(null=True, blank=True, help_text="km/h")
+    hdop = models.FloatField(null=True, blank=True)
+    nombre_satellites = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Calculé à la réception (voir utils.position_gps_fiable) : une position douteuse est
+    # conservée mais exclue du calcul des zones, pour ne pas créer une zone au mauvais endroit.
+    position_fiable = models.BooleanField(default=True)
+
     synced = models.BooleanField(default=True)
     historique_sync = models.ForeignKey(
         HistoriqueSync, on_delete=models.SET_NULL, null=True, blank=True, related_name='incidents'
@@ -47,6 +55,7 @@ class Incident(models.Model):
             models.Index(fields=['boitier', 'horodatage']),
             models.Index(fields=['type_incident']),
             models.Index(fields=['synced']),
+            models.Index(fields=['position_fiable']),
         ]
         ordering = ['-horodatage']
 

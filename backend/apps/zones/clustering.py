@@ -65,7 +65,9 @@ def generer_zones_depuis_incidents():
     # de sa zone, calculée plus bas) se lit sur son boîtier, jamais sur ses propres champs —
     # Incident ne porte pas de région propre (voir étape 4B).
     incidents = list(
-        Incident.objects.all().select_related('boitier')
+        # Une position GPS douteuse (peu de satellites / HDOP élevé) placerait la zone au
+        # mauvais endroit : ces incidents restent enregistrés mais ne comptent pas ici.
+        Incident.objects.filter(position_fiable=True).select_related('boitier')
         .only('id', 'latitude', 'longitude', 'niveau_gravite', 'boitier__region', 'boitier_id')
     )
 

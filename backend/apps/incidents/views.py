@@ -10,7 +10,7 @@ from apps.core.regionalisation import FiltreRegional
 
 from .models import Incident
 from .serializers import IncidentIngestionSerializer, IncidentSerializer
-from .utils import calculer_gravite
+from .utils import calculer_gravite, position_gps_fiable
 
 
 class IncidentCursorPagination(CursorPagination):
@@ -33,8 +33,14 @@ class IngestionView(APIView):
             serializer.validated_data.get('acceleration_x'),
             serializer.validated_data.get('acceleration_y'),
             serializer.validated_data.get('acceleration_z'),
+            vitesse_gps=serializer.validated_data.get('vitesse_gps'),
         )
-        incident = serializer.save(boitier=request.user, synced=True, niveau_gravite=niveau_gravite)
+        position_fiable = position_gps_fiable(
+            config, serializer.validated_data.get('hdop'), serializer.validated_data.get('nombre_satellites'),
+        )
+        incident = serializer.save(
+            boitier=request.user, synced=True, niveau_gravite=niveau_gravite, position_fiable=position_fiable,
+        )
         return Response(IncidentSerializer(incident).data, status=201)
 
 
@@ -58,10 +64,13 @@ class SyncBatchView(APIView):
                 donnees.get('acceleration_x'),
                 donnees.get('acceleration_y'),
                 donnees.get('acceleration_z'),
+                vitesse_gps=donnees.get('vitesse_gps'),
             )
             incidents_crees.append(Incident.objects.create(
                 boitier=request.user, synced=False, historique_sync=historique,
-                niveau_gravite=niveau_gravite, **donnees,
+                niveau_gravite=niveau_gravite,
+                position_fiable=position_gps_fiable(config, donnees.get('hdop'), donnees.get('nombre_satellites')),
+                **donnees,
             ))
 
         return Response({

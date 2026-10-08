@@ -174,3 +174,70 @@ class IncidentFiltrageRegionalTests(TestCase):
                     boitier=None, latitude=LATITUDE_BASE, longitude=LONGITUDE_BASE,
                     horodatage=timezone.now(), type_incident=Incident.TypeIncident.AUTRE,
                 )
+
+
+
+class DonneesGpsIngestionTests(TestCase):
+    """Le boîtier transmet vitesse GPS, HDOP et nombre de satellites avec chaque incident :
+    une position douteuse est conservée mais marquée non fiable ; la vitesse GPS remplace le
+    radar absent dans le calcul de gravité."""
+
+    def setUp(self):
+        self.boitier = Boitier(region='dakar')
+        self.boitier.set_api_key('cle-gps')
+        self.boitier.save()
+        self.client = APIClient()
+        self.entetes = {'HTTP_X_BOITIER_UUID': str(self.boitier.id), 'HTTP_X_BOITIER_API_KEY': 'cle-gps'}
+
+    def envoyer(self, **donnees):
+        corps = {
+            'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE,
+            'horodatage': timezone.now().isoformat(), 'type_incident': 'choc_violent',
+        }
+        corps.update(donnees)
+        return self.client.post('/api/v1/incidents/ingestion/', corps, format='json', **self.entetes)
+
+    def test_les_donnees_gps_sont_enregistrees(self):
+        reponse = self.envoyer(vitesse_gps=72.5, hdop=0.9, nombre_satellites=9)
+        self.assertEqual(reponse.status_code, 201)
+        incident = Incident.objects.get()
+        self.assertEqual((incident.vitesse_gps, incident.hdop, incident.nombre_satellites), (72.5, 0.9, 9))
+        self.assertTrue(incident.position_fiable)
+
+    def test_trop_peu_de_satellites_rend_la_position_non_fiable(self):
+        self.envoyer(hdop=1.0, nombre_satellites=3)
+        self.assertFalse(Incident.objects.get().position_fiable)
+
+    def test_hdop_trop_eleve_rend_la_position_non_fiable(self):
+        self.envoyer(hdop=8.0, nombre_satellites=7)
+        self.assertFalse(Incident.objects.get().position_fiable)
+
+    def test_sans_donnees_de_qualite_la_position_reste_fiable(self):
+        # Firmware qui n'envoie pas encore HDOP/satellites : rien ne prouve une mauvaise position.
+        self.envoyer()
+        self.assertTrue(Incident.objects.get().position_fiable)
+
+    def test_la_vitesse_gps_remplace_le_radar_absent_pour_la_gravite(self):
+        self.envoyer(vitesse_gps=90)
+        self.assertEqual(Incident.objects.get().niveau_gravite, Incident.NiveauGravite.CRITIQUE)
+
+    def test_le_radar_reste_prioritaire_sur_la_vitesse_gps(self):
+        self.envoyer(vitesse_radar=10, vitesse_gps=90)
+        self.assertEqual(Incident.objects.get().niveau_gravite, Incident.NiveauGravite.FAIBLE)
+
+    def test_valeurs_negatives_refusees(self):
+        self.assertEqual(self.envoyer(hdop=-1).status_code, 400)
+        self.assertEqual(self.envoyer(vitesse_gps=-5).status_code, 400)
+
+    def test_le_lot_hors_ligne_applique_les_memes_regles(self):
+        horodatage = timezone.now().isoformat()
+        commun = {'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE, 'horodatage': horodatage,
+                  'type_incident': 'choc_violent'}
+        reponse = self.client.post('/api/v1/incidents/sync-batch/', {'incidents': [
+            {**commun, 'hdop': 0.8, 'nombre_satellites': 10},
+            {**commun, 'hdop': 9.0, 'nombre_satellites': 10},
+        ]}, format='json', **self.entetes)
+        self.assertEqual(reponse.status_code, 201)
+        self.assertEqual(
+            sorted(Incident.objects.values_list('position_fiable', flat=True)), [False, True],
+        )

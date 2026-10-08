@@ -3,13 +3,26 @@ import math
 from .models import Incident
 
 
-def calculer_gravite(config, vitesse_radar, acceleration_x, acceleration_y, acceleration_z):
+def position_gps_fiable(config, hdop, nombre_satellites):
+    """Une position est douteuse si le module GPS voit trop peu de satellites ou si son HDOP
+    est trop élevé (tunnel, bâtiments, démarrage à froid). Une donnée absente (firmware qui ne
+    l'envoie pas encore) n'est pas une preuve de mauvaise qualité : elle ne déclasse rien."""
+    if nombre_satellites is not None and nombre_satellites < config.gps_satellites_min:
+        return False
+    if hdop is not None and hdop > config.gps_hdop_max:
+        return False
+    return True
+
+
+def calculer_gravite(config, vitesse_radar, acceleration_x, acceleration_y, acceleration_z, vitesse_gps=None):
     """Détermine le niveau de gravité d'un incident à partir des seuils de ConfigurationSysteme.
 
     Heuristique simple pour un prototype de mémoire : un incident est CRITIQUE si la vitesse
-    d'impact (radar HB100) ou la magnitude d'accélération (MPU6050) dépasse le seuil configuré ;
-    MOYEN à la moitié de ce seuil ; FAIBLE sinon.
+    d'impact (radar HB100, ou à défaut la vitesse GPS) ou la magnitude d'accélération (MPU6050)
+    dépasse le seuil configuré ; MOYEN à la moitié de ce seuil ; FAIBLE sinon.
     """
+    if vitesse_radar is None:
+        vitesse_radar = vitesse_gps
     magnitude_acceleration = None
     if acceleration_x is not None and acceleration_y is not None and acceleration_z is not None:
         magnitude_acceleration = math.sqrt(acceleration_x**2 + acceleration_y**2 + acceleration_z**2)

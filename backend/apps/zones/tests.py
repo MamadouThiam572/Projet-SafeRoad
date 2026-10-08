@@ -47,6 +47,16 @@ class GenererZonesDepuisIncidentsTests(TestCase):
             niveau_gravite=gravite,
         )
 
+    def test_les_positions_gps_non_fiables_ne_comptent_pas_pour_une_zone(self):
+        config = ConfigurationSysteme.instance()
+        incidents = [self._creer_incident(decalage=0.0002 * i) for i in range(config.min_incidents_pour_zone)]
+        Incident.objects.filter(pk=incidents[0].pk).update(position_fiable=False)
+
+        resultat = generer_zones_depuis_incidents()
+
+        self.assertEqual(resultat['zones_creees'], 0)
+        self.assertEqual(Zone.objects.count(), 0)
+
     def test_sous_le_minimum_ne_cree_aucune_zone(self):
         config = ConfigurationSysteme.instance()
         for i in range(config.min_incidents_pour_zone - 1):

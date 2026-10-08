@@ -12,7 +12,9 @@ class IncidentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Incident
         fields = '__all__'
-        read_only_fields = ['id', 'recu_le', 'niveau_gravite', 'synced', 'historique_sync', 'zone']
+        read_only_fields = [
+            'id', 'recu_le', 'niveau_gravite', 'synced', 'historique_sync', 'zone', 'position_fiable',
+        ]
 
 
 class IncidentIngestionSerializer(serializers.ModelSerializer):
@@ -22,4 +24,9 @@ class IncidentIngestionSerializer(serializers.ModelSerializer):
             'latitude', 'longitude', 'altitude', 'horodatage', 'type_incident',
             'vitesse_radar', 'acceleration_x', 'acceleration_y', 'acceleration_z',
             'gyro_x', 'gyro_y', 'gyro_z', 'distance_hcsr04',
+            'vitesse_gps', 'hdop', 'nombre_satellites',
         ]
+        extra_kwargs = {
+            'vitesse_gps': {'min_value': 0},
+            'hdop': {'min_value': 0},
+        }

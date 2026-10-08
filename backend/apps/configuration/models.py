@@ -16,6 +16,14 @@ class ConfigurationSysteme(models.Model):
         help_text="Durée pendant laquelle l'ancienne clé API d'un boîtier reste valide après régénération, "
                    "le temps de reconfigurer le dispositif sur le terrain.",
     )
+    # Fiabilité d'une position GPS du boîtier (module GPS : nombre de satellites et HDOP).
+    # En dessous, la position reste enregistrée mais n'entre pas dans le calcul des zones.
+    gps_satellites_min = models.PositiveSmallIntegerField(
+        default=4, help_text="Nombre minimal de satellites pour une position GPS fiable",
+    )
+    gps_hdop_max = models.FloatField(
+        default=5.0, help_text="HDOP maximal pour une position GPS fiable (plus petit = plus précis)",
+    )
     date_maj = models.DateTimeField(auto_now=True)
     modifie_par = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 

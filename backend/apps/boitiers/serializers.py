@@ -13,9 +13,13 @@ class BoitierSerializer(serializers.ModelSerializer):
             'id', 'proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation',
             'region', 'region_libelle',
             'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
+            'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
             'statut', 'statut_libelle', 'date_creation', 'date_maj',
         ]
-        read_only_fields = ['id', 'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj']
+        read_only_fields = [
+            'id', 'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
+            'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
+        ]
 
 
 class BoitierAnaserSerializer(serializers.ModelSerializer):
@@ -55,6 +59,10 @@ class BoitierCreationSerializer(serializers.ModelSerializer):
 class PositionSerializer(serializers.Serializer):
     latitude = serializers.FloatField()
     longitude = serializers.FloatField()
+    # Optionnels : un firmware plus ancien qui ne les envoie pas reste accepté.
+    vitesse_gps = serializers.FloatField(required=False, allow_null=True, min_value=0)
+    hdop = serializers.FloatField(required=False, allow_null=True, min_value=0)
+    nombre_satellites = serializers.IntegerField(required=False, allow_null=True, min_value=0)
 
 
 class HistoriqueSyncSerializer(serializers.ModelSerializer):

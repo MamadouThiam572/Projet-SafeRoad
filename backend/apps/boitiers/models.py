@@ -36,6 +36,10 @@ class Boitier(models.Model):
     derniere_latitude = models.FloatField(null=True, blank=True)
     derniere_longitude = models.FloatField(null=True, blank=True)
     derniere_localisation_maj = models.DateTimeField(null=True, blank=True)
+    # Dernières données du module GPS reçues avec la position (supervision / Monitoring).
+    derniere_vitesse_gps = models.FloatField(null=True, blank=True, help_text="km/h")
+    dernier_hdop = models.FloatField(null=True, blank=True)
+    dernier_nombre_satellites = models.PositiveSmallIntegerField(null=True, blank=True)
     statut = models.CharField(max_length=15, choices=Statut.choices, default=Statut.ACTIF)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_maj = models.DateTimeField(auto_now=True)

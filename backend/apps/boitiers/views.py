@@ -121,7 +121,13 @@ class BoitierViewSet(viewsets.ModelViewSet):
         boitier.derniere_latitude = latitude
         boitier.derniere_longitude = longitude
         boitier.derniere_localisation_maj = timezone.now()
-        boitier.save(update_fields=['derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj'])
+        boitier.derniere_vitesse_gps = serializer.validated_data.get('vitesse_gps')
+        boitier.dernier_hdop = serializer.validated_data.get('hdop')
+        boitier.dernier_nombre_satellites = serializer.validated_data.get('nombre_satellites')
+        boitier.save(update_fields=[
+            'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
+            'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
+        ])
 
         config = ConfigurationSysteme.instance()
         position_boitier = (latitude, longitude)
