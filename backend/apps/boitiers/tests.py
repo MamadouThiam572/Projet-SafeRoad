@@ -79,6 +79,30 @@ class BoitierPositionTests(TestCase):
 
         self.assertFalse(reponse.data['alerte_proximite'])
 
+    def test_seule_une_zone_reconnue_par_l_anaser_declenche_l_alerte_de_zone(self):
+        # Règle métier : la validation technique dit « potentiellement à risque » ; seule la
+        # reconnaissance ANASER active l'alerte « vous entrez dans une zone à risque ».
+        # (Les alertes dynamiques des capteurs sont déclenchées par le boîtier lui-même.)
+        zone = Zone.objects.create(latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=100)
+        client = APIClient()
+        donnees = {'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE}
+
+        for statut in Zone.StatutValidation:
+            if statut == Zone.StatutValidation.RECONNUE:
+                continue
+            with self.subTest(statut=statut):
+                Zone.objects.filter(pk=zone.pk).update(statut_validation=statut)
+                cache.clear()
+                reponse = client.post('/api/v1/boitiers/position/', donnees, **self.headers)
+                self.assertFalse(reponse.data['alerte_proximite'])
+                self.assertIsNone(reponse.data['zone'])
+
+        Zone.objects.filter(pk=zone.pk).update(statut_validation=Zone.StatutValidation.RECONNUE)
+        cache.clear()
+        reponse = client.post('/api/v1/boitiers/position/', donnees, **self.headers)
+        self.assertTrue(reponse.data['alerte_proximite'])
+        self.assertEqual(reponse.data['zone'], str(zone.id))
+
     def test_cooldown_empeche_une_deuxieme_alerte_immediate(self):
         self._creer_zone_validee()
         client = APIClient()
