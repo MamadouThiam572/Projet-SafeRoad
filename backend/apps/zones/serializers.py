@@ -15,7 +15,7 @@ class ZoneSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # statut_validation ne change que via l'action `statut` (workflow + historique).
         read_only_fields = [
-            'id', 'latitude_centre', 'longitude_centre', 'rayon_metres', 'nombre_incidents',
+            'id', 'latitude_centre', 'longitude_centre', 'rayon_metres', 'nombre_incidents', 'nombre_signalements',
             'score_danger', 'niveau_danger', 'region', 'statut_validation', 'date_creation', 'date_maj',
         ]
 

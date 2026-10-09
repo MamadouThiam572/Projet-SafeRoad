@@ -65,6 +65,9 @@ class Zone(ModeleHorodate):
     longitude_centre = models.FloatField(db_index=True)
     rayon_metres = models.FloatField()
     nombre_incidents = models.PositiveIntegerField(default=0)
+    # Signalements validés dans le rayon de la zone : ils renforcent son score mais ne
+    # suffisent jamais à la créer (voir clustering.py).
+    nombre_signalements = models.PositiveIntegerField(default=0)
     score_danger = models.FloatField(default=0)
     niveau_danger = models.CharField(max_length=10, choices=NiveauDanger.choices, default=NiveauDanger.NORMALE)
     # Qui a décidé quoi et quand : voir HistoriqueStatutZone, seule source de traçabilité.

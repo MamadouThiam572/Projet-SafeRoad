@@ -7,6 +7,8 @@ from apps.comptes.models import Administrateur
 from apps.configuration.models import ConfigurationSysteme
 from apps.incidents.models import Incident
 
+from apps.signalements.models import Signalement
+
 from .clustering import _niveau_danger, _region_majoritaire, generer_zones_depuis_incidents
 from .models import Zone
 
@@ -56,6 +58,39 @@ class GenererZonesDepuisIncidentsTests(TestCase):
 
         self.assertEqual(resultat['zones_creees'], 0)
         self.assertEqual(Zone.objects.count(), 0)
+
+    def _creer_signalement_valide(self, decalage):
+        return Signalement.objects.create(
+            type_danger='nid_de_poule', region='dakar', statut=Signalement.Statut.VALIDE,
+            latitude=LATITUDE_BASE + decalage, longitude=LONGITUDE_BASE + decalage,
+        )
+
+    def test_les_signalements_seuls_ne_creent_jamais_de_zone(self):
+        for i in range(10):
+            self._creer_signalement_valide(decalage=0.0002 * (i % 3))
+        self._creer_incident(decalage=0)  # un seul incident capteur : sous le minimum
+
+        self.assertEqual(generer_zones_depuis_incidents()['zones_creees'], 0)
+
+    def test_les_signalements_valides_renforcent_le_score_d_une_zone(self):
+        for i in range(3):
+            self._creer_incident(decalage=0.0002 * i)
+        self._creer_signalement_valide(decalage=0.0001)
+        self._creer_signalement_valide(decalage=0.0003)
+        Signalement.objects.create(  # non validé : ne compte pas
+            type_danger='obstacle', region='dakar', latitude=LATITUDE_BASE, longitude=LONGITUDE_BASE,
+        )
+        Signalement.objects.create(  # validé mais à ~2 km : hors du rayon
+            type_danger='obstacle', region='dakar', statut=Signalement.Statut.VALIDE,
+            latitude=LATITUDE_BASE + 0.018, longitude=LONGITUDE_BASE,
+        )
+
+        generer_zones_depuis_incidents()
+
+        zone = Zone.objects.get()
+        self.assertEqual((zone.nombre_incidents, zone.nombre_signalements), (3, 2))
+        self.assertEqual(zone.score_danger, 3 + 0.5 * 2)  # poids par défaut 0,5
+        self.assertEqual(zone.niveau_danger, Zone.NiveauDanger.VIGILANCE)
 
     def test_sous_le_minimum_ne_cree_aucune_zone(self):
         config = ConfigurationSysteme.instance()

@@ -24,6 +24,12 @@ class ConfigurationSysteme(models.Model):
     gps_hdop_max = models.FloatField(
         default=5.0, help_text="HDOP maximal pour une position GPS fiable (plus petit = plus précis)",
     )
+    # Les données du boîtier priment : seuls les incidents capteurs créent une zone ; un
+    # signalement validé ne fait qu'ajouter ce poids au score d'une zone existante
+    # (un incident capteur compte 1, un incident critique 3).
+    poids_signalement_valide = models.FloatField(
+        default=0.5, help_text="Points ajoutés au score d'une zone par signalement validé dans son rayon",
+    )
     date_maj = models.DateTimeField(auto_now=True)
     modifie_par = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 

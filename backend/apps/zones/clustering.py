@@ -8,6 +8,7 @@ from sklearn.cluster import DBSCAN
 from apps.configuration.models import ConfigurationSysteme
 from apps.core.geo import boite_englobante
 from apps.incidents.models import Incident
+from apps.signalements.models import Signalement
 
 from .models import Zone
 
@@ -22,6 +23,20 @@ def _niveau_danger(score_danger):
     if score_danger >= 4:
         return Zone.NiveauDanger.VIGILANCE
     return Zone.NiveauDanger.NORMALE
+
+
+def _signalements_valides_autour(latitude, longitude, rayon_metres):
+    """Nombre de signalements validés par un administrateur dans le rayon de la zone."""
+    delta_latitude, delta_longitude = boite_englobante(latitude, longitude, rayon_metres)
+    candidats = Signalement.objects.filter(
+        statut=Signalement.Statut.VALIDE,
+        latitude__range=(latitude - delta_latitude, latitude + delta_latitude),
+        longitude__range=(longitude - delta_longitude, longitude + delta_longitude),
+    ).only('latitude', 'longitude')
+    return sum(
+        1 for s in candidats
+        if geodesic((latitude, longitude), (s.latitude, s.longitude)).meters <= rayon_metres
+    )
 
 
 def _region_majoritaire(incidents_du_cluster, latitude_centre, longitude_centre):
@@ -98,7 +113,12 @@ def generer_zones_depuis_incidents():
         nombre_critiques = sum(
             1 for inc in incidents_du_cluster if inc.niveau_gravite == Incident.NiveauGravite.CRITIQUE
         )
-        score_danger = nombre_incidents + 2 * nombre_critiques
+        # Les incidents capteurs ont créé le cluster ; les signalements validés alentour ne
+        # font qu'en renforcer le score (données du boîtier prioritaires).
+        nombre_signalements = _signalements_valides_autour(
+            latitude_centre, longitude_centre, config.rayon_clustering_metres,
+        )
+        score_danger = nombre_incidents + 2 * nombre_critiques + config.poids_signalement_valide * nombre_signalements
         niveau_danger = _niveau_danger(score_danger)
         region = _region_majoritaire(incidents_du_cluster, latitude_centre, longitude_centre)
 
@@ -127,6 +147,7 @@ def generer_zones_depuis_incidents():
             zone_existante.longitude_centre = longitude_centre
             zone_existante.rayon_metres = config.rayon_clustering_metres
             zone_existante.nombre_incidents = nombre_incidents
+            zone_existante.nombre_signalements = nombre_signalements
             zone_existante.score_danger = score_danger
             zone_existante.niveau_danger = niveau_danger
             zone_existante.region = region
@@ -139,6 +160,7 @@ def generer_zones_depuis_incidents():
                 longitude_centre=longitude_centre,
                 rayon_metres=config.rayon_clustering_metres,
                 nombre_incidents=nombre_incidents,
+                nombre_signalements=nombre_signalements,
                 score_danger=score_danger,
                 niveau_danger=niveau_danger,
                 region=region,
