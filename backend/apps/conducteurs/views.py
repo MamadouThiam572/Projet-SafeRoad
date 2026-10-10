@@ -1,5 +1,6 @@
 from django.core.cache import cache
-from rest_framework import status
+from django.db.models import Q
+from rest_framework import mixins, status, viewsets
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -9,11 +10,12 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.permissions import EstConducteur
+from apps.core.pagination import PaginationListeGestion
+from apps.core.permissions import EstAdministrateur, EstConducteur
 from apps.core.throttling import LoginRateThrottle
 
 from .models import Conducteur
-from .serializers import ConducteurInscriptionSerializer, ProfilConducteurSerializer
+from .serializers import ConducteurGestionSerializer, ConducteurInscriptionSerializer, ProfilConducteurSerializer
 
 # Clé de cache utilisée pour révoquer un refresh token conducteur (voir ConducteurLogoutView).
 _CLE_JTI_REVOQUE = 'conducteur:jti-revoque:{jti}'
@@ -145,3 +147,32 @@ class MoiConducteurView(APIView):
         serializer.save()
         return Response(serializer.data)
 
+
+class ConducteurGestionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Comptes conducteurs vus par un administrateur (lecture seule).
+
+    Super admin : tous. Administrateur régional : les conducteurs équipés d'un boîtier de sa
+    région, plus ceux qui n'ont encore aucun boîtier (sans quoi il ne pourrait jamais en
+    équiper un nouveau). Filtres : ?q= (nom, prénom, email, téléphone), ?disponible=1 (sans boîtier).
+    """
+
+    serializer_class = ConducteurGestionSerializer
+    permission_classes = [EstAdministrateur]
+    pagination_class = PaginationListeGestion
+
+    def get_queryset(self):
+        queryset = Conducteur.objects.select_related('boitier').order_by('nom', 'prenom')
+        utilisateur = self.request.user
+        if utilisateur.role == 'admin':
+            de_sa_region = Q(boitier__region=utilisateur.region) if utilisateur.region else Q(pk__in=[])
+            queryset = queryset.filter(de_sa_region | Q(boitier__isnull=True))
+
+        recherche = self.request.query_params.get('q', '').strip()
+        if recherche:
+            queryset = queryset.filter(
+                Q(nom__icontains=recherche) | Q(prenom__icontains=recherche)
+                | Q(email__icontains=recherche) | Q(telephone__icontains=recherche)
+            )
+        if self.request.query_params.get('disponible') in ('1', 'true'):
+            queryset = queryset.filter(boitier__isnull=True)
+        return queryset

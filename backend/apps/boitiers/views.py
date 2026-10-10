@@ -1,15 +1,18 @@
 import secrets
 
 from django.core.cache import cache
-from django.db.models import Count
+from django.db import transaction
+from django.db.models import Count, OuterRef, Subquery
 from django.utils import timezone
 from geopy.distance import geodesic
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.alertes.models import AlerteProximite
 from apps.alertes.utils import determiner_canaux_alerte
+from apps.conducteurs.models import Conducteur
 from apps.configuration.models import ConfigurationSysteme
 from apps.core.cache_keys import CACHE_CLE_ZONES_ACTIVES, CACHE_TTL_ZONES_ACTIVES_SECONDES
 from apps.core.geo import boite_englobante
@@ -18,8 +21,15 @@ from apps.core.permissions import EstAdministrateur, EstAnaser, EstBoitier
 from apps.core.regionalisation import FiltreRegional
 from apps.zones.models import Zone
 
-from .models import Boitier
-from .serializers import BoitierAnaserSerializer, BoitierCreationSerializer, BoitierSerializer, PositionSerializer
+from .models import Boitier, HistoriqueBoitier
+from .serializers import (
+    AffectationSerializer,
+    BoitierAnaserSerializer,
+    BoitierCreationSerializer,
+    BoitierSerializer,
+    HistoriqueBoitierSerializer,
+    PositionSerializer,
+)
 
 # Écart toléré entre l'horloge GPS du boîtier et celle du serveur.
 DERIVE_HORLOGE_TOLEREE_MINUTES = 5
@@ -38,6 +48,13 @@ def _zones_validees_actives():
         )
         cache.set(CACHE_CLE_ZONES_ACTIVES, zones, CACHE_TTL_ZONES_ACTIVES_SECONDES)
     return zones
+
+
+def _tracer(boitier, evenement, acteur, conducteur=None, commentaire=''):
+    HistoriqueBoitier.objects.create(
+        boitier=boitier, evenement=evenement, conducteur=conducteur, acteur=acteur,
+        role_acteur=getattr(acteur, 'role', ''), commentaire=commentaire,
+    )
 
 
 class BoitierViewSet(viewsets.ModelViewSet):
@@ -66,7 +83,13 @@ class BoitierViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        derniere_affectation = HistoriqueBoitier.objects.filter(
+            boitier=OuterRef('pk'), evenement=HistoriqueBoitier.Evenement.AFFECTE,
+        ).order_by('-date', '-id').values('date')[:1]
+        queryset = (
+            super().get_queryset().select_related('conducteur')
+            .annotate(date_derniere_affectation=Subquery(derniere_affectation))
+        )
         if self._est_anaser():
             queryset = queryset.annotate(
                 nombre_incidents=Count('incidents', distinct=True),
@@ -96,9 +119,69 @@ class BoitierViewSet(viewsets.ModelViewSet):
         api_key_en_clair = secrets.token_urlsafe(32)
         boitier.set_api_key(api_key_en_clair)
         boitier.save(update_fields=['api_key_hash'])
+        _tracer(boitier, HistoriqueBoitier.Evenement.ENREGISTRE, request.user)
         data = BoitierSerializer(boitier).data
         data['api_key'] = api_key_en_clair
         return Response(data, status=201)
+
+    @action(detail=True, methods=['post'])
+    def affecter(self, request, pk=None):
+        """Rattache le boîtier à un conducteur (boîtier installé sur son véhicule). Si le
+        boîtier équipait déjà quelqu'un d'autre, ce conducteur est d'abord désaffecté. Un
+        conducteur ne peut porter qu'un boîtier : il doit être libéré de l'ancien avant."""
+        donnees = AffectationSerializer(data=request.data)
+        donnees.is_valid(raise_exception=True)
+        commentaire = donnees.validated_data.get('commentaire', '')
+
+        with transaction.atomic():
+            boitier = self.get_object()
+            try:
+                conducteur = Conducteur.objects.select_for_update().get(pk=donnees.validated_data['conducteur'])
+            except Conducteur.DoesNotExist:
+                raise ValidationError({'conducteur': "Conducteur introuvable."})
+            if not conducteur.is_active:
+                raise ValidationError({'conducteur': "Ce compte conducteur est désactivé."})
+            if conducteur.boitier_id == boitier.id:
+                raise ValidationError({'conducteur': "Ce boîtier est déjà affecté à ce conducteur."})
+            if conducteur.boitier_id is not None:
+                raise ValidationError({'conducteur': "Ce conducteur est déjà équipé d'un autre boîtier : désaffectez-le d'abord."})
+
+            precedent = Conducteur.objects.filter(boitier=boitier).first()
+            if precedent:
+                precedent.boitier = None
+                precedent.save(update_fields=['boitier'])
+                _tracer(boitier, HistoriqueBoitier.Evenement.DESAFFECTE, request.user, precedent,
+                        f"Réaffecté à {conducteur.prenom} {conducteur.nom}")
+
+            conducteur.boitier = boitier
+            conducteur.save(update_fields=['boitier'])
+            if 'numero_immatriculation' in donnees.validated_data:
+                boitier.numero_immatriculation = donnees.validated_data['numero_immatriculation']
+                boitier.save(update_fields=['numero_immatriculation', 'date_maj'])
+            _tracer(boitier, HistoriqueBoitier.Evenement.AFFECTE, request.user, conducteur, commentaire)
+
+        # Relu via get_queryset() : conducteur et date d'affectation annotée à jour.
+        return Response(BoitierSerializer(self.get_queryset().get(pk=boitier.pk)).data)
+
+    @action(detail=True, methods=['post'])
+    def desaffecter(self, request, pk=None):
+        with transaction.atomic():
+            boitier = self.get_object()
+            conducteur = Conducteur.objects.select_for_update().filter(boitier=boitier).first()
+            if conducteur is None:
+                raise ValidationError("Ce boîtier n'est affecté à aucun conducteur.")
+            conducteur.boitier = None
+            conducteur.save(update_fields=['boitier'])
+            _tracer(boitier, HistoriqueBoitier.Evenement.DESAFFECTE, request.user, conducteur,
+                    (request.data.get('commentaire') or '').strip())
+        # Relu via get_queryset() : conducteur et date d'affectation annotée à jour.
+        return Response(BoitierSerializer(self.get_queryset().get(pk=boitier.pk)).data)
+
+    @action(detail=True, methods=['get'])
+    def historique(self, request, pk=None):
+        boitier = self.get_object()
+        entrees = boitier.historique.select_related('conducteur', 'acteur')
+        return Response(HistoriqueBoitierSerializer(entrees, many=True).data)
 
     @action(detail=True, methods=['post'], url_path='regenerer-cle')
     def regenerer_cle(self, request, pk=None):

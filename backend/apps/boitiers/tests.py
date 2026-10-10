@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.comptes.models import Administrateur
+from apps.conducteurs.models import Conducteur
 from apps.core.regions import Region
 from apps.zones.models import Zone
 
@@ -518,3 +519,125 @@ class BoitierFiltrageRegionalTests(TestCase):
         )
         self.assertEqual(self.client.delete(f'/api/v1/boitiers/{boitier.id}/').status_code, 403)
         self.assertEqual(self.client.post(f'/api/v1/boitiers/{boitier.id}/regenerer-cle/').status_code, 403)
+
+
+class AffectationConducteurTests(TestCase):
+    """Affectation boîtier <-> conducteur : un conducteur porte au plus un boîtier, une
+    réaffectation libère l'ancien conducteur, chaque événement est historisé, et un
+    administrateur régional n'agit que sur les boîtiers de sa région."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-aff@test.sn', password='x', nom='Fall', prenom='Aida', role=Administrateur.Role.SUPER_ADMIN,
+        )
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='dakar-aff@test.sn', password='x', nom='Diop', prenom='Cheikh',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.anaser = Administrateur.objects.create_user(
+            email='anaser-aff@test.sn', password='x', nom='Diallo', prenom='Assane', role=Administrateur.Role.ANASER,
+        )
+
+    def setUp(self):
+        self.boitier_dakar = Boitier.objects.create(region='dakar')
+        self.boitier_thies = Boitier.objects.create(region='thies')
+        self.awa = Conducteur.objects.create_user(email='awa-aff@test.sn', password='x', nom='Ba', prenom='Awa')
+        self.moussa = Conducteur.objects.create_user(email='moussa-aff@test.sn', password='x', nom='Sy', prenom='Moussa')
+
+    def client_pour(self, utilisateur):
+        client = APIClient()
+        client.force_authenticate(user=utilisateur)
+        return client
+
+    def affecter(self, utilisateur, boitier, conducteur, **extra):
+        return self.client_pour(utilisateur).post(
+            f'/api/v1/boitiers/{boitier.id}/affecter/', {'conducteur': str(conducteur.id), **extra}, format='json',
+        )
+
+    def test_affecter_un_boitier(self):
+        reponse = self.affecter(self.admin_dakar, self.boitier_dakar, self.awa, numero_immatriculation='DK-1234-AB')
+        self.assertEqual(reponse.status_code, 200, reponse.data)
+        self.assertEqual(reponse.data['conducteur']['nom'], 'Awa Ba')
+        self.assertIsNotNone(reponse.data['date_affectation'])
+        self.assertEqual(reponse.data['numero_immatriculation'], 'DK-1234-AB')
+        self.awa.refresh_from_db()
+        self.assertEqual(self.awa.boitier_id, self.boitier_dakar.id)
+
+    def test_reaffecter_libere_l_ancien_conducteur_et_trace_tout(self):
+        self.affecter(self.admin_dakar, self.boitier_dakar, self.awa)
+        self.affecter(self.admin_dakar, self.boitier_dakar, self.moussa)
+
+        self.awa.refresh_from_db()
+        self.moussa.refresh_from_db()
+        self.assertIsNone(self.awa.boitier_id)
+        self.assertEqual(self.moussa.boitier_id, self.boitier_dakar.id)
+        historique = self.client_pour(self.super_admin).get(f'/api/v1/boitiers/{self.boitier_dakar.id}/historique/').data
+        self.assertEqual(
+            [(h['evenement'], h['conducteur_nom']) for h in historique],
+            [('affecte', 'Moussa Sy'), ('desaffecte', 'Awa Ba'), ('affecte', 'Awa Ba')],
+        )
+        self.assertEqual(historique[0]['acteur'], self.admin_dakar.id)
+
+    def test_un_conducteur_deja_equipe_doit_etre_libere_avant(self):
+        self.affecter(self.super_admin, self.boitier_thies, self.awa)
+        reponse = self.affecter(self.super_admin, self.boitier_dakar, self.awa)
+        self.assertEqual(reponse.status_code, 400)
+        self.awa.refresh_from_db()
+        self.assertEqual(self.awa.boitier_id, self.boitier_thies.id)
+
+    def test_desaffecter(self):
+        self.affecter(self.admin_dakar, self.boitier_dakar, self.awa)
+        reponse = self.client_pour(self.admin_dakar).post(
+            f'/api/v1/boitiers/{self.boitier_dakar.id}/desaffecter/', {'commentaire': 'Véhicule vendu'}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 200)
+        self.assertIsNone(reponse.data['conducteur'])
+        self.awa.refresh_from_db()
+        self.assertIsNone(self.awa.boitier_id)
+        self.assertEqual(
+            self.client_pour(self.admin_dakar).post(f'/api/v1/boitiers/{self.boitier_dakar.id}/desaffecter/').status_code,
+            400,  # plus rien à désaffecter
+        )
+
+    def test_l_admin_regional_n_agit_que_dans_sa_region(self):
+        self.assertEqual(self.affecter(self.admin_dakar, self.boitier_thies, self.awa).status_code, 404)
+
+    def test_anaser_ne_peut_pas_affecter(self):
+        self.assertEqual(self.affecter(self.anaser, self.boitier_dakar, self.awa).status_code, 403)
+
+    def test_conducteur_desactive_ou_inconnu_refuse(self):
+        self.awa.is_active = False
+        self.awa.save(update_fields=['is_active'])
+        self.assertEqual(self.affecter(self.super_admin, self.boitier_dakar, self.awa).status_code, 400)
+        reponse = self.client_pour(self.super_admin).post(
+            f'/api/v1/boitiers/{self.boitier_dakar.id}/affecter/',
+            {'conducteur': '00000000-0000-0000-0000-000000000000'}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 400)
+
+    def test_l_enregistrement_d_un_boitier_est_historise(self):
+        reponse = self.client_pour(self.super_admin).post('/api/v1/boitiers/', {'region': 'kolda'}, format='json')
+        historique = self.client_pour(self.super_admin).get(f"/api/v1/boitiers/{reponse.data['id']}/historique/").data
+        self.assertEqual([h['evenement'] for h in historique], ['enregistre'])
+
+    def test_liste_des_conducteurs_pour_l_admin_regional(self):
+        self.affecter(self.super_admin, self.boitier_thies, self.moussa)
+        fatou = Conducteur.objects.create_user(email='fatou-aff@test.sn', password='x', nom='Ndiaye', prenom='Fatou')
+        self.affecter(self.super_admin, self.boitier_dakar, fatou)
+
+        ids = {c['id'] for c in self.client_pour(self.admin_dakar).get('/api/v1/conducteurs/').data}
+        # Équipée à Dakar + disponible ; pas Moussa (équipé à Thiès).
+        self.assertEqual(ids, {str(fatou.id), str(self.awa.id)})
+
+        tous = {c['id'] for c in self.client_pour(self.super_admin).get('/api/v1/conducteurs/').data}
+        self.assertEqual(tous, {str(fatou.id), str(self.awa.id), str(self.moussa.id)})
+
+        disponibles = self.client_pour(self.super_admin).get('/api/v1/conducteurs/?disponible=1').data
+        self.assertEqual([c['id'] for c in disponibles], [str(self.awa.id)])
+        recherche = self.client_pour(self.super_admin).get('/api/v1/conducteurs/?q=ndiaye').data
+        self.assertEqual([c['region'] for c in recherche], ['dakar'])
+
+    def test_la_liste_des_conducteurs_est_reservee_aux_administrateurs(self):
+        self.assertEqual(self.client_pour(self.anaser).get('/api/v1/conducteurs/').status_code, 403)
+        self.assertEqual(self.client_pour(self.awa).get('/api/v1/conducteurs/').status_code, 403)

@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils import timezone
@@ -87,3 +88,33 @@ class HistoriqueSync(models.Model):
 
     def __str__(self):
         return f"Sync {self.boitier_id} — {self.date_synchronisation}"
+
+
+class HistoriqueBoitier(models.Model):
+    """Vie administrative d'un boîtier : enregistrement, puis chaque affectation /
+    désaffectation à un conducteur — qui l'a faite, quand, et pour quel conducteur."""
+
+    class Evenement(models.TextChoices):
+        ENREGISTRE = 'enregistre', 'Enregistré'
+        AFFECTE = 'affecte', 'Affecté'
+        DESAFFECTE = 'desaffecte', 'Désaffecté'
+
+    boitier = models.ForeignKey(Boitier, on_delete=models.CASCADE, related_name='historique')
+    evenement = models.CharField(max_length=15, choices=Evenement.choices)
+    # Référence par chaîne : conducteurs.Conducteur dépend déjà de ce module (Conducteur.boitier).
+    conducteur = models.ForeignKey(
+        'conducteurs.Conducteur', on_delete=models.SET_NULL, null=True, blank=True, related_name='historique_boitiers',
+    )
+    acteur = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='actions_boitiers',
+    )
+    role_acteur = models.CharField(max_length=15, blank=True)
+    commentaire = models.TextField(blank=True)
+    date = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        # 'id' départage deux événements enregistrés dans la même microseconde.
+        ordering = ['-date', '-id']
+
+    def __str__(self):
+        return f"Boîtier {self.boitier_id} : {self.evenement}"
