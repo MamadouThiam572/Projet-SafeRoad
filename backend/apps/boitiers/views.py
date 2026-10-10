@@ -249,7 +249,8 @@ class BoitierViewSet(viewsets.ModelViewSet):
             ).exists()
             if not deja_notifiee_recemment:
                 AlerteProximite.objects.create(
-                    boitier=boitier, zone=zone_proche, distance_metres=distance_min,
+                    boitier=boitier, conducteur=getattr(boitier, 'conducteur', None),
+                    zone=zone_proche, distance_metres=distance_min,
                     latitude=latitude, longitude=longitude, **canaux,
                 )
                 alerte_proximite = True

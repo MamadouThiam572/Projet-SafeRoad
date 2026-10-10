@@ -34,6 +34,11 @@ class AlerteProximite(models.Model):
         ROUGE = 'rouge', 'Rouge'
 
     boitier = models.ForeignKey(Boitier, on_delete=models.CASCADE, related_name='alertes_proximite')
+    # Conducteur qui portait le boîtier au moment de l'alerte : un boîtier peut changer de
+    # conducteur, et le suivant ne doit pas voir les alertes de son prédécesseur.
+    conducteur = models.ForeignKey(
+        'conducteurs.Conducteur', on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes_proximite',
+    )
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name='alertes_proximite')
     distance_metres = models.FloatField()
     latitude = models.FloatField()

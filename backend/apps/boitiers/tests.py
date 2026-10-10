@@ -141,6 +141,38 @@ class BoitierPositionTests(TestCase):
         self.assertIsNone(self.boitier.derniere_position_horodatage)
         self.assertEqual(self.boitier.derniere_latitude, LATITUDE_BASE)  # la position reste acceptée
 
+    def test_l_alerte_est_rattachee_au_conducteur_qui_porte_le_boitier(self):
+        awa = Conducteur.objects.create_user(email='awa-alerte@test.sn', password='x', nom='Ba', prenom='Awa',
+                                             boitier=self.boitier)
+        moussa = Conducteur.objects.create_user(email='moussa-alerte@test.sn', password='x', nom='Sy', prenom='Moussa')
+        self._creer_zone_validee()
+        donnees = {'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE}
+        APIClient().post('/api/v1/boitiers/position/', donnees, **self.headers)
+
+        client_awa = APIClient()
+        client_awa.force_authenticate(user=awa)
+        alertes = client_awa.get('/api/v1/conducteur/alertes/').data
+        self.assertEqual(len(alertes), 1)
+        self.assertEqual(alertes[0]['niveau_danger'], 'critique')
+
+        # Le boîtier passe à Moussa : il ne voit pas l'alerte d'Awa.
+        awa.boitier = None
+        awa.save(update_fields=['boitier'])
+        moussa.boitier = self.boitier
+        moussa.save(update_fields=['boitier'])
+        client_moussa = APIClient()
+        client_moussa.force_authenticate(user=moussa)
+        self.assertEqual(client_moussa.get('/api/v1/conducteur/alertes/').data, [])
+        self.assertEqual(len(client_awa.get('/api/v1/conducteur/alertes/').data), 1)
+
+    def test_les_alertes_conducteur_sont_reservees_aux_conducteurs(self):
+        admin = Administrateur.objects.create_user(
+            email='admin-alerte@test.sn', password='x', nom='D', prenom='D', role=Administrateur.Role.SUPER_ADMIN,
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        self.assertEqual(client.get('/api/v1/conducteur/alertes/').status_code, 403)
+
     def test_cooldown_empeche_une_deuxieme_alerte_immediate(self):
         self._creer_zone_validee()
         client = APIClient()

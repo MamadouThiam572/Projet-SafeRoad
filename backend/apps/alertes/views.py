@@ -4,11 +4,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.pagination import PaginationListeGestion
-from apps.core.permissions import EstAdministrateur
+from apps.core.permissions import EstAdministrateur, EstConducteur
 from apps.core.regionalisation import FiltreRegional
 
 from .models import Alerte, AlerteProximite
-from .serializers import AlerteProximiteSerializer, AlerteSerializer
+from .serializers import AlerteConducteurSerializer, AlerteProximiteSerializer, AlerteSerializer
 
 
 class AlerteViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -45,3 +45,15 @@ class AlerteProximiteViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, v
     # région, cohérent avec Boitier.region (étape 4A) sans toucher à Zone (hors périmètre).
     filter_backends = [FiltreRegional]
     region_lookup_field = 'boitier__region'
+
+
+class AlerteConducteurViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Alertes de zone reçues par le conducteur connecté (uniquement celles déclenchées
+    pendant qu'il portait le boîtier). Pagination optionnelle (?page=)."""
+
+    serializer_class = AlerteConducteurSerializer
+    permission_classes = [EstConducteur]
+    pagination_class = PaginationListeGestion
+
+    def get_queryset(self):
+        return AlerteProximite.objects.filter(conducteur=self.request.user).select_related('zone')
