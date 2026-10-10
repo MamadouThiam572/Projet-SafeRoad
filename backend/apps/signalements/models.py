@@ -26,7 +26,9 @@ class Signalement(ModeleHorodate):
     class Statut(models.TextChoices):
         A_VERIFIER = 'a_verifier', 'À vérifier'
         EN_VERIFICATION = 'en_verification', 'En vérification'
-        VALIDE = 'valide', 'Validé'
+        # Validation technique (admin régional / super admin) ; la reconnaissance officielle
+        # appartient à l'ANASER, au niveau des zones (voir apps/zones/models.py).
+        VALIDE = 'valide', 'Validé techniquement'
         REJETE = 'rejete', 'Rejeté'
 
     S = Statut

@@ -27,7 +27,9 @@ class Incident(models.Model):
         # Traitement administratif de l'incident détecté par le boîtier.
         NOUVEAU = 'nouveau', 'Nouveau'
         EN_COURS = 'en_cours', 'En cours'
-        VALIDE = 'valide', 'Validé'
+        # Validation technique (admin régional / super admin) ; la reconnaissance officielle
+        # appartient à l'ANASER, au niveau des zones (voir apps/zones/models.py).
+        VALIDE = 'valide', 'Validé techniquement'
         CLOTURE = 'cloture', 'Clôturé'
         # Fausse détection (dos-d'âne pris pour un choc, capteur défaillant…) : l'incident reste
         # enregistré mais ne compte plus dans le calcul des zones (voir clustering.py).
