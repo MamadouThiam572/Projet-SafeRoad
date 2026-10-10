@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'apps.statistiques',
     'apps.configuration',
     'apps.signalements',
+    'apps.demandes',
 ]
 
 MIDDLEWARE = [
@@ -141,6 +142,8 @@ REST_FRAMEWORK = {
         'signalement': '30/hour',
         # Demandes de lien / réinitialisations de mot de passe (par IP).
         'mot_de_passe': '5/hour',
+        # Formulaires publics (demande d'installation, contact), par IP.
+        'demande': '5/hour',
     },
 }
 

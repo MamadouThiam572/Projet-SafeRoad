@@ -17,6 +17,7 @@ class NotificationAdmin(models.Model):
         NOUVEAU_SIGNALEMENT = 'nouveau_signalement', 'Nouveau signalement'
         ZONE_SOUMISE_ANASER = 'zone_soumise_anaser', 'Zone soumise à l\'ANASER'
         DECISION_ANASER = 'decision_anaser', 'Décision de l\'ANASER'
+        NOUVELLE_DEMANDE = 'nouvelle_demande', 'Nouvelle demande'
 
     destinataire = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -26,6 +27,7 @@ class NotificationAdmin(models.Model):
         related_name='notifications',
         help_text="Null = notification diffusée à tous les administrateurs",
     )
+
     class Audience(models.TextChoices):
         # À qui s'adresse une diffusion (destinataire=None).
         PERSONNEL = 'personnel', 'Administrateurs et super administrateur'
