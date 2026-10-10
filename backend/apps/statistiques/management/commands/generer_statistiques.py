@@ -4,28 +4,47 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from apps.incidents.models import Incident
+from apps.signalements.models import Signalement
 from apps.zones.models import Zone
 
 from ...models import StatistiquesQuotidiennes
 
 
 class Command(BaseCommand):
-    help = "Génère les statistiques quotidiennes agrégées (globales, par zone, par type) pour une date donnée."
+    help = (
+        "Génère les statistiques quotidiennes agrégées (globales, par zone, par type). Par défaut : "
+        "hier. --jours N recalcule les N derniers jours (rattrape les jours manqués si la tâche "
+        "planifiée n'a pas tourné) ; la commande est idempotente."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--date', type=str, default=None,
             help="Date au format AAAA-MM-JJ (par défaut: hier).",
         )
+        parser.add_argument(
+            '--jours', type=int, default=1,
+            help="Nombre de jours à (re)calculer en remontant depuis hier (défaut : 1).",
+        )
 
     def handle(self, *args, **options):
         if options['date']:
-            date_cible = timezone.datetime.strptime(options['date'], '%Y-%m-%d').date()
+            dates = [timezone.datetime.strptime(options['date'], '%Y-%m-%d').date()]
         else:
-            date_cible = timezone.now().date() - timedelta(days=1)
+            hier = timezone.localdate() - timedelta(days=1)
+            dates = [hier - timedelta(days=decalage) for decalage in range(max(options['jours'], 1))]
+        for date_cible in sorted(dates):
+            self._generer(date_cible)
 
-        incidents_du_jour = Incident.objects.filter(horodatage__date=date_cible)
-        nombre_zones_actives = Zone.objects.filter(actif=True).count()
+    def _generer(self, date_cible):
+        # Les fausses détections écartées par un administrateur ne comptent pas.
+        incidents_du_jour = Incident.objects.filter(horodatage__date=date_cible).exclude(
+            statut=Incident.Statut.REJETE,
+        )
+        # Zones publiques : reconnues par l'ANASER et actives.
+        nombre_zones_actives = Zone.objects.filter(
+            actif=True, statut_validation=Zone.StatutValidation.RECONNUE,
+        ).count()
 
         def _nombre_critiques(queryset):
             return queryset.filter(niveau_gravite=Incident.NiveauGravite.CRITIQUE).count()
@@ -37,6 +56,7 @@ class Command(BaseCommand):
                 'nombre_incidents': incidents_du_jour.count(),
                 'nombre_incidents_critiques': _nombre_critiques(incidents_du_jour),
                 'nombre_zones_actives': nombre_zones_actives,
+                'nombre_signalements': Signalement.objects.filter(date_creation__date=date_cible).count(),
             },
         )
 

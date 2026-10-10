@@ -24,6 +24,9 @@ class StatistiquesQuotidiennes(models.Model):
     nombre_incidents = models.PositiveIntegerField(default=0)
     nombre_incidents_critiques = models.PositiveIntegerField(default=0)
     nombre_zones_actives = models.PositiveIntegerField(default=0)
+    # Signalements reçus ce jour-là (renseigné sur l'agrégat global uniquement : un
+    # signalement n'a ni zone ni type d'incident).
+    nombre_signalements = models.PositiveIntegerField(default=0)
     date_generation = models.DateTimeField(auto_now_add=True)
 
     class Meta:

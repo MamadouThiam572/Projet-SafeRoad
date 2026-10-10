@@ -1,5 +1,7 @@
 from datetime import timedelta
+from io import StringIO
 
+from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -232,3 +234,41 @@ class TableauDeBordTests(TestCase):
         client = APIClient()
         client.force_authenticate(user=self.conducteur)
         self.assertEqual(client.get('/api/v1/tableau-de-bord/').status_code, 403)
+
+
+class GenererStatistiquesTests(TestCase):
+    """Agrégats quotidiens : signalements comptés, faux positifs exclus, seules les zones
+    reconnues sont « actives », et --jours rattrape les jours manqués sans doublon."""
+
+    def setUp(self):
+        self.hier = timezone.localdate() - timedelta(days=1)
+        moment_hier = timezone.now() - timedelta(days=1)
+        boitier = Boitier.objects.create(region='dakar')
+        for statut in ('nouveau', 'valide', 'rejete'):
+            Incident.objects.create(
+                boitier=boitier, latitude=14.69, longitude=-17.44, horodatage=moment_hier,
+                type_incident='choc_violent', niveau_gravite='critique', statut=statut,
+            )
+        signalement = Signalement.objects.create(type_danger='obstacle', latitude=14.69, longitude=-17.44, region='dakar')
+        Signalement.objects.filter(pk=signalement.pk).update(date_creation=moment_hier)
+        Zone.objects.create(latitude_centre=14.69, longitude_centre=-17.44, rayon_metres=300,
+                            statut_validation=Zone.StatutValidation.RECONNUE)
+        Zone.objects.create(latitude_centre=14.79, longitude_centre=-16.93, rayon_metres=300)  # proposée
+
+    def test_agregat_global_d_hier(self):
+        call_command('generer_statistiques', stdout=StringIO())
+        globale = StatistiquesQuotidiennes.objects.get(date=self.hier, zone=None, type_incident=None)
+        self.assertEqual(globale.nombre_incidents, 2)  # le faux positif est exclu
+        self.assertEqual(globale.nombre_incidents_critiques, 2)
+        self.assertEqual(globale.nombre_signalements, 1)
+        self.assertEqual(globale.nombre_zones_actives, 1)  # seule la zone reconnue
+
+    def test_rattrapage_sans_doublon(self):
+        call_command('generer_statistiques', '--jours', '3', stdout=StringIO())
+        call_command('generer_statistiques', '--jours', '3', stdout=StringIO())
+        globales = StatistiquesQuotidiennes.objects.filter(zone=None, type_incident=None)
+        self.assertEqual(globales.count(), 3)
+        self.assertEqual(
+            sorted(globales.values_list('date', flat=True)),
+            [self.hier - timedelta(days=2), self.hier - timedelta(days=1), self.hier],
+        )

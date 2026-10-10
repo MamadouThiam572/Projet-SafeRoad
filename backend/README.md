@@ -43,9 +43,37 @@ python manage.py generer_zones          # recalcule les zones (clustering DBSCAN
 python manage.py generer_statistiques   # agrège les statistiques publiques
 ```
 
+## Tâches planifiées
+
+Deux commandes doivent tourner automatiquement :
+
+| Commande | Fréquence | Rôle |
+| --- | --- | --- |
+| `verifier_boitiers_hors_ligne` | toutes les 5 min | alerte « boîtier hors ligne » (délai réglable dans la configuration) |
+| `generer_statistiques --jours 3` | chaque nuit | statistiques quotidiennes ; `--jours 3` rattrape les nuits où la machine était éteinte |
+
+Sur un poste Windows (PostgreSQL doit tourner, la tâche s'exécute quand la session est ouverte) :
+
+```powershell
+$py = "C:\chemin\vers\backend\venv\Scripts\python.exe"
+$manage = "C:\chemin\vers\backend\manage.py"
+schtasks /Create /TN "SafeRoad\BoitiersHorsLigne" /SC MINUTE /MO 5 /TR "`"$py`" `"$manage`" verifier_boitiers_hors_ligne"
+schtasks /Create /TN "SafeRoad\Statistiques" /SC DAILY /ST 00:30 /TR "`"$py`" `"$manage`" generer_statistiques --jours 3"
+```
+
+Sur un serveur Linux (`crontab -e`) :
+
+```cron
+*/5 * * * *  /chemin/venv/bin/python /chemin/backend/manage.py verifier_boitiers_hors_ligne
+30 0 * * *   /chemin/venv/bin/python /chemin/backend/manage.py generer_statistiques --jours 3
+```
+
 ## Structure
 
-- `apps/comptes` — authentification JWT (admin / ANASER), modèle `Administrateur`
-- `apps/incidents`, `apps/zones` — détection et cartographie des points noirs
-- `apps/boitiers` — boîtiers embarqués (clé API hachée)
+- `apps/comptes` — authentification JWT (admin / ANASER), modèle `Administrateur`, mots de passe
+- `apps/conducteurs` — comptes conducteurs (inscription, connexion, profil)
+- `apps/incidents`, `apps/zones` — détection, traitement et validation des zones (technique puis ANASER)
+- `apps/boitiers` — boîtiers embarqués (clé API hachée), affectation aux conducteurs
+- `apps/signalements` — dangers signalés par les conducteurs (photo protégée)
+- `apps/demandes` — demandes d'installation et messages de contact du site public
 - `apps/statistiques`, `apps/alertes`, `apps/notifications`, `apps/anaser`
