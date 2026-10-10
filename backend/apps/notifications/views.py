@@ -4,7 +4,7 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.core.permissions import EstAdministrateur
+from apps.core.permissions import EstAdminOuAnaser
 
 from .models import NotificationAdmin
 from .serializers import NotificationAdminSerializer
@@ -12,13 +12,18 @@ from .serializers import NotificationAdminSerializer
 
 class NotificationAdminViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = NotificationAdminSerializer
-    permission_classes = [EstAdministrateur]
+    permission_classes = [EstAdminOuAnaser]
 
     def get_queryset(self):
         utilisateur = self.request.user
         # Un admin ne voit que ses notifications ciblées + les diffusions globales
         # (destinataire=None) — pas les notifications adressées à d'autres admins.
-        diffusions = Q(destinataire__isnull=True)
+        # L'ANASER ne reçoit que les diffusions qui lui sont adressées (zones soumises à sa
+        # reconnaissance) ; les administrateurs, celles du personnel.
+        audience = (
+            NotificationAdmin.Audience.ANASER if utilisateur.role == 'anaser' else NotificationAdmin.Audience.PERSONNEL
+        )
+        diffusions = Q(destinataire__isnull=True, audience=audience)
         if getattr(utilisateur, 'role', None) == 'admin':
             # Administrateur régional : seulement les diffusions de sa région (même règle que
             # FiltreRegional — sans région, aucune), plus celles qui ne visent aucun objet.

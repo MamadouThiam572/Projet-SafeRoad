@@ -111,3 +111,60 @@ class NotificationDiffusionTests(TestCase):
         client_dakar.force_authenticate(user=self.admin_dakar)
         reponse = client_dakar.get(f'/api/v1/notifications/{self.notif_dakar.id}/')
         self.assertFalse(reponse.data['lue'])
+
+
+class NotificationsWorkflowZoneTests(TestCase):
+    """La soumission d'une zone prévient l'ANASER ; sa décision prévient l'admin de la région."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='dakar-wf@test.sn', password='x', nom='D', prenom='D', role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.admin_thies = Administrateur.objects.create_user(
+            email='thies-wf@test.sn', password='x', nom='T', prenom='T', role=Administrateur.Role.ADMIN, region='thies',
+        )
+        cls.anaser = Administrateur.objects.create_user(
+            email='anaser-wf@test.sn', password='x', nom='A', prenom='A', role=Administrateur.Role.ANASER,
+        )
+
+    def setUp(self):
+        self.zone = Zone.objects.create(
+            latitude_centre=14.69, longitude_centre=-17.44, rayon_metres=300, region='dakar',
+            statut_validation=Zone.StatutValidation.VALIDEE_TECHNIQUEMENT,
+        )
+
+    def client_pour(self, utilisateur):
+        client = APIClient()
+        client.force_authenticate(user=utilisateur)
+        return client
+
+    def types_recus(self, utilisateur):
+        return [n['type_notification'] for n in self.client_pour(utilisateur).get('/api/v1/notifications/').data]
+
+    def changer(self, utilisateur, statut, commentaire=''):
+        return self.client_pour(utilisateur).patch(
+            f'/api/v1/zones/{self.zone.id}/statut/', {'statut_validation': statut, 'commentaire': commentaire},
+            format='json',
+        )
+
+    def test_l_anaser_est_prevenue_d_une_zone_soumise(self):
+        self.changer(self.admin_dakar, 'soumise_anaser')
+        self.assertEqual(self.types_recus(self.anaser), ['zone_soumise_anaser'])
+        self.assertNotIn('zone_soumise_anaser', self.types_recus(self.admin_dakar))
+
+    def test_l_admin_de_la_region_est_prevenu_de_la_decision(self):
+        self.changer(self.admin_dakar, 'soumise_anaser')
+        self.changer(self.anaser, 'rejetee', 'Données insuffisantes')
+        notifications = self.client_pour(self.admin_dakar).get('/api/v1/notifications/').data
+        decisions = [n for n in notifications if n['type_notification'] == 'decision_anaser']
+        self.assertEqual(len(decisions), 1)
+        self.assertIn('Données insuffisantes', decisions[0]['message'])
+        self.assertNotIn('decision_anaser', self.types_recus(self.admin_thies))
+        self.assertNotIn('decision_anaser', self.types_recus(self.anaser))
+
+    def test_l_anaser_ne_recoit_pas_les_notifications_du_personnel(self):
+        NotificationAdmin.objects.create(
+            type_notification=NotificationAdmin.TypeNotification.SYNC_ECHOUEE, message="Diffusion personnel",
+        )
+        self.assertEqual(self.types_recus(self.anaser), [])

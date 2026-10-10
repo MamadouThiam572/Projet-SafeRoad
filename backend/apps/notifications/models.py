@@ -15,6 +15,8 @@ class NotificationAdmin(models.Model):
         SYNC_ECHOUEE = 'sync_echouee', 'Synchronisation échouée'
         FEEDBACK_ANASER = 'feedback_anaser', 'Feedback ANASER'
         NOUVEAU_SIGNALEMENT = 'nouveau_signalement', 'Nouveau signalement'
+        ZONE_SOUMISE_ANASER = 'zone_soumise_anaser', 'Zone soumise à l\'ANASER'
+        DECISION_ANASER = 'decision_anaser', 'Décision de l\'ANASER'
 
     destinataire = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -24,7 +26,13 @@ class NotificationAdmin(models.Model):
         related_name='notifications',
         help_text="Null = notification diffusée à tous les administrateurs",
     )
+    class Audience(models.TextChoices):
+        # À qui s'adresse une diffusion (destinataire=None).
+        PERSONNEL = 'personnel', 'Administrateurs et super administrateur'
+        ANASER = 'anaser', 'ANASER'
+
     type_notification = models.CharField(max_length=25, choices=TypeNotification.choices)
+    audience = models.CharField(max_length=10, choices=Audience.choices, default=Audience.PERSONNEL)
     incident = models.ForeignKey(Incident, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
     boitier = models.ForeignKey(Boitier, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
