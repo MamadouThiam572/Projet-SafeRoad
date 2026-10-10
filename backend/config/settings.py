@@ -247,3 +247,9 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='SafeRoad <no-reply@saferoad.sn>')
+
+# SMS d'urgence (voir apps/core/sms.py) : 'console' (terminal), 'memoire' (tests) ou 'orange'.
+SMS_BACKEND = config('SMS_BACKEND', default='console')
+ORANGE_SMS_CLIENT_ID = config('ORANGE_SMS_CLIENT_ID', default='')
+ORANGE_SMS_CLIENT_SECRET = config('ORANGE_SMS_CLIENT_SECRET', default='')
+ORANGE_SMS_EXPEDITEUR = config('ORANGE_SMS_EXPEDITEUR', default='')

@@ -166,6 +166,8 @@ class DemandeInstallationViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
             conducteur = Conducteur.objects.create_user(
                 email=email, password=None, nom=demande.nom, prenom=demande.prenom, telephone=demande.telephone,
                 adresse=', '.join(filter(None, [demande.adresse, demande.commune])),
+                contact_urgence_nom=demande.contact_urgence_nom,
+                contact_urgence_telephone=demande.contact_urgence_telephone,
             )
             boitier = Boitier(
                 region=demande.region, numero_immatriculation=immatriculation,

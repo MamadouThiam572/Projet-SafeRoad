@@ -36,6 +36,7 @@ class ProfilConducteurSerializer(serializers.ModelSerializer):
         model = Conducteur
         fields = [
             'id', 'email', 'nom', 'prenom', 'telephone', 'adresse',
+            'contact_urgence_nom', 'contact_urgence_telephone',
             'plaque_immatriculation', 'numero_boitier',
             'pref_alertes_critiques', 'pref_alertes_vigilance', 'pref_annonce_vocale', 'pref_sensibilite_nuit',
             'date_creation',

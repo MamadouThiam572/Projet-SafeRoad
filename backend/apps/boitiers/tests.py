@@ -673,3 +673,31 @@ class AffectationConducteurTests(TestCase):
     def test_la_liste_des_conducteurs_est_reservee_aux_administrateurs(self):
         self.assertEqual(self.client_pour(self.anaser).get('/api/v1/conducteurs/').status_code, 403)
         self.assertEqual(self.client_pour(self.awa).get('/api/v1/conducteurs/').status_code, 403)
+
+
+class ConfigurationBoitierTests(TestCase):
+    """GET /boitiers/configuration/ : ce que le firmware récupère (seuils, contact d'urgence)."""
+
+    def setUp(self):
+        self.boitier = Boitier(region='dakar', numero_immatriculation='DK-1234-AB')
+        self.boitier.set_api_key('cle-config')
+        self.boitier.save()
+        self.entetes = {'HTTP_X_BOITIER_UUID': str(self.boitier.id), 'HTTP_X_BOITIER_API_KEY': 'cle-config'}
+
+    def test_configuration_avec_contact_d_urgence(self):
+        Conducteur.objects.create_user(
+            email='awa-config@test.sn', password='x', nom='Ba', prenom='Awa', boitier=self.boitier,
+            contact_urgence_nom='Fatou Ba', contact_urgence_telephone='+221775556677',
+        )
+        donnees = APIClient().get('/api/v1/boitiers/configuration/', **self.entetes).data
+        self.assertEqual(donnees['contact_urgence'], {'nom': 'Fatou Ba', 'telephone': '+221775556677'})
+        self.assertEqual(donnees['conducteur'], 'Awa Ba')
+        self.assertEqual(donnees['seuil_vitesse_choc'], 60.0)
+        self.assertEqual(donnees['numeros_secours']['samu'], '1515')
+
+    def test_sans_conducteur_pas_de_contact(self):
+        donnees = APIClient().get('/api/v1/boitiers/configuration/', **self.entetes).data
+        self.assertIsNone(donnees['contact_urgence'])
+
+    def test_reservee_aux_boitiers(self):
+        self.assertIn(APIClient().get('/api/v1/boitiers/configuration/').status_code, (401, 403))

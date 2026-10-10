@@ -1,4 +1,9 @@
+from django.conf import settings
+from django.core.mail import send_mail
+from django.utils import timezone
 from geopy.distance import geodesic
+
+from apps.core.sms import envoyer_sms
 
 from apps.core.geo import boite_englobante
 from apps.zones.models import Zone
@@ -42,3 +47,51 @@ def determiner_canaux_alerte(niveau_danger):
         'canal_buzzer_declenche': canal_sonore_actif,
         'canal_audio_declenche': canal_sonore_actif,
     }
+
+
+# Un choc remonté en différé (boîtier resté hors réseau) n'est plus une urgence à signaler.
+FRAICHEUR_URGENCE_MINUTES = 15
+# Un même accident peut produire plusieurs détections : un seul envoi par boîtier sur ce délai.
+DELAI_ENTRE_URGENCES_MINUTES = 10
+
+
+def prevenir_choc_critique(alerte):
+    """SMS à l'administrateur de la région du boîtier, e-mail au super administrateur. Le
+    contact d'urgence du conducteur est prévenu par le boîtier lui-même (SIM800L)."""
+    from apps.comptes.models import Administrateur
+
+    from .models import Alerte
+
+    incident, boitier = alerte.incident, alerte.boitier
+    maintenant = timezone.now()
+    if incident is None or maintenant - incident.horodatage > timezone.timedelta(minutes=FRAICHEUR_URGENCE_MINUTES):
+        return
+    deja_prevenu = Alerte.objects.filter(
+        boitier=boitier, niveau=Alerte.Niveau.CRITIQUE, motif=Alerte.Motif.INCIDENT,
+        date_creation__gte=maintenant - timezone.timedelta(minutes=DELAI_ENTRE_URGENCES_MINUTES),
+    ).exclude(pk=alerte.pk).exists()
+    if deja_prevenu:
+        return
+
+    heure = timezone.localtime(incident.horodatage).strftime('%H:%M')
+    vehicule = boitier.numero_immatriculation or f"boîtier {str(boitier.id)[:8]}"
+    if alerte.conducteur:
+        vehicule += f" ({alerte.conducteur.prenom} {alerte.conducteur.nom})"
+    vitesse = incident.vitesse_radar if incident.vitesse_radar is not None else incident.vitesse_gps
+    vitesse_texte = f", {round(vitesse)} km/h" if vitesse is not None else ""
+    position = f"https://maps.google.com/?q={incident.latitude:.5f},{incident.longitude:.5f}"
+    message = (
+        f"SafeRoad - CHOC CRITIQUE a {heure}, {vehicule}{vitesse_texte}. Position : {position} "
+        f"- A confirmer. SAMU 1515, Pompiers 18."
+    )
+
+    admins_region = Administrateur.objects.filter(
+        role=Administrateur.Role.ADMIN, region=boitier.region, is_active=True,
+    ).exclude(telephone='')
+    for admin in admins_region:
+        envoyer_sms(admin.telephone, message)
+
+    super_admins = Administrateur.objects.filter(role=Administrateur.Role.SUPER_ADMIN, is_active=True)
+    destinataires = [compte.email for compte in super_admins]
+    if destinataires:
+        send_mail(f"SafeRoad — Choc critique ({vehicule})", message, settings.DEFAULT_FROM_EMAIL, destinataires)

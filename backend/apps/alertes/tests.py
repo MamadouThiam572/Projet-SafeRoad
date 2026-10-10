@@ -1,13 +1,15 @@
 from io import StringIO
 
+from django.core import mail
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.boitiers.models import Boitier
 from apps.comptes.models import Administrateur
 from apps.conducteurs.models import Conducteur
+from apps.core.sms import boite_sms
 from apps.incidents.models import Incident
 from apps.zones.models import Zone
 
@@ -324,3 +326,57 @@ class AlerteSourcesTests(TestCase):
         alerte.refresh_from_db()
         self.assertEqual((alerte.statut, alerte.traitee_par), ('traitee', self.admin_dakar))
         self.assertEqual(self.client.patch(url, {'statut': 'nouvelle'}, format='json').status_code, 400)
+
+
+@override_settings(SMS_BACKEND='memoire')
+class UrgenceChocCritiqueTests(TestCase):
+    """Choc critique récent -> SMS à l'admin de la région (avec téléphone) et e-mail au super
+    admin, une seule fois par boîtier sur 10 minutes ; rien pour un choc ancien ou non critique."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='dakar-urg@test.sn', password='x', nom='Diop', prenom='Cheikh', telephone='+221771112233',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        Administrateur.objects.create_user(
+            email='thies-urg@test.sn', password='x', nom='Sy', prenom='Astou', telephone='+221772223344',
+            role=Administrateur.Role.ADMIN, region='thies',
+        )
+        Administrateur.objects.create_user(
+            email='super-urg@test.sn', password='x', nom='Fall', prenom='Aida', role=Administrateur.Role.SUPER_ADMIN,
+        )
+
+    def setUp(self):
+        boite_sms.clear()
+        self.boitier = Boitier.objects.create(region='dakar', numero_immatriculation='DK-4471-EF')
+        Conducteur.objects.create_user(email='moussa-urg@test.sn', password='x', nom='Diop', prenom='Moussa',
+                                       boitier=self.boitier)
+
+    def choc(self, **extra):
+        with self.captureOnCommitCallbacks(execute=True):
+            return creer_incident_critique(self.boitier, vitesse_radar=72, **extra)
+
+    def test_choc_critique_previent_l_admin_de_la_region_et_le_super_admin(self):
+        incident = self.choc()
+        self.assertEqual([numero for numero, _ in boite_sms], ['+221771112233'])
+        sms = boite_sms[0][1]
+        self.assertIn('CHOC CRITIQUE', sms)
+        self.assertIn('DK-4471-EF (Moussa Diop), 72 km/h', sms)
+        self.assertIn(f'https://maps.google.com/?q={incident.latitude:.5f},{incident.longitude:.5f}', sms)
+        self.assertEqual([m.to for m in mail.outbox], [['super-urg@test.sn']])
+
+    def test_un_seul_envoi_par_boitier_sur_dix_minutes(self):
+        self.choc()
+        self.choc()
+        self.assertEqual(len(boite_sms), 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_un_choc_remonte_en_differe_ne_declenche_pas_d_urgence(self):
+        self.choc(horodatage=timezone.now() - timezone.timedelta(hours=3))
+        self.assertEqual(boite_sms, [])
+
+    def test_un_incident_moyen_ne_declenche_pas_d_urgence(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            creer_incident_critique(self.boitier, niveau_gravite=Incident.NiveauGravite.MOYEN)
+        self.assertEqual(boite_sms, [])

@@ -41,6 +41,8 @@ class DemandeInstallation(ModeleHorodate):
     nombre_vehicules = models.PositiveSmallIntegerField(default=1)
     disponibilites = models.CharField(max_length=255, blank=True)
     message = models.TextField(blank=True)
+    contact_urgence_nom = models.CharField(max_length=150, blank=True)
+    contact_urgence_telephone = models.CharField(max_length=30, blank=True)
     # Accord explicite du demandeur pour l'utilisation de ses coordonnées (obligatoire).
     consentement_donnees = models.BooleanField(default=False)
 

@@ -13,7 +13,8 @@ class DemandeInstallationCreationSerializer(serializers.ModelSerializer):
         model = DemandeInstallation
         fields = [
             'nom', 'prenom', 'telephone', 'email', 'region', 'commune', 'adresse', 'type_vehicule',
-            'immatriculation', 'nombre_vehicules', 'disponibilites', 'message', 'consentement_donnees',
+            'immatriculation', 'nombre_vehicules', 'disponibilites', 'message',
+            'contact_urgence_nom', 'contact_urgence_telephone', 'consentement_donnees',
         ]
 
     def validate_consentement_donnees(self, valeur):
@@ -37,7 +38,8 @@ class DemandeInstallationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nom', 'prenom', 'telephone', 'email', 'region', 'region_libelle', 'commune', 'adresse',
             'type_vehicule', 'type_vehicule_libelle', 'immatriculation', 'nombre_vehicules', 'disponibilites',
-            'message', 'statut', 'statut_libelle', 'rdv_date', 'rdv_lieu', 'numero_cni', 'conducteur', 'boitier',
+            'message', 'contact_urgence_nom', 'contact_urgence_telephone', 'statut', 'statut_libelle',
+            'rdv_date', 'rdv_lieu', 'numero_cni', 'conducteur', 'boitier',
             'date_creation', 'date_maj',
         ]
         read_only_fields = fields

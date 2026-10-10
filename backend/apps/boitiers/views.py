@@ -31,6 +31,9 @@ from .serializers import (
     PositionSerializer,
 )
 
+# Numéros d'urgence au Sénégal, rappelés dans les SMS d'alerte.
+NUMEROS_SECOURS = {'samu': '1515', 'sapeurs_pompiers': '18', 'police': '17'}
+
 # Écart toléré entre l'horloge GPS du boîtier et celle du serveur.
 DERIVE_HORLOGE_TOLEREE_MINUTES = 5
 
@@ -194,6 +197,29 @@ class BoitierViewSet(viewsets.ModelViewSet):
             'id': str(boitier.id),
             'api_key': api_key_en_clair,
             'ancienne_cle_valide_jusqu_a': boitier.api_key_hash_ancien_expire_le,
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[EstBoitier])
+    def configuration(self, request):
+        """Paramètres que le firmware récupère au démarrage puis périodiquement : seuils de
+        détection, rythme d'envoi, et numéro du contact d'urgence du conducteur qui porte le
+        boîtier (SMS envoyé par le SIM800L lui-même en cas de choc critique, sans dépendre
+        d'Internet ni du serveur)."""
+        boitier = request.user
+        config = ConfigurationSysteme.instance()
+        conducteur = getattr(boitier, 'conducteur', None)
+        contact = None
+        if conducteur and conducteur.contact_urgence_telephone:
+            contact = {'nom': conducteur.contact_urgence_nom, 'telephone': conducteur.contact_urgence_telephone}
+        return Response({
+            'seuil_acceleration_critique': config.seuil_acceleration_critique,
+            'seuil_vitesse_choc': config.seuil_vitesse_choc,
+            'intervalle_sync_secondes': config.intervalle_sync_secondes,
+            'rayon_alerte_proximite_metres': config.rayon_alerte_proximite_metres,
+            'conducteur': f"{conducteur.prenom} {conducteur.nom}" if conducteur else None,
+            'immatriculation': boitier.numero_immatriculation or None,
+            'contact_urgence': contact,
+            'numeros_secours': NUMEROS_SECOURS,
         })
 
     @action(detail=False, methods=['post'], permission_classes=[EstBoitier])

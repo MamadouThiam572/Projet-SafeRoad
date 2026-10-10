@@ -1,10 +1,11 @@
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from apps.incidents.models import Incident
 
 from .models import Alerte
-from .utils import zone_reconnue_contenant
+from .utils import prevenir_choc_critique, zone_reconnue_contenant
 
 _NIVEAU_PAR_GRAVITE = {
     Incident.NiveauGravite.MOYEN: Alerte.Niveau.VIGILANCE,
@@ -21,7 +22,7 @@ def creer_alerte_sur_incident(sender, instance, created, **kwargs):
         return
     zone = zone_reconnue_contenant(instance.latitude, instance.longitude)
     boitier = instance.boitier
-    Alerte.objects.get_or_create(incident=instance, defaults={
+    alerte, _ = Alerte.objects.get_or_create(incident=instance, defaults={
         'source': Alerte.Source.ZONE if zone else Alerte.Source.VEHICULE,
         'niveau': niveau,
         'motif': Alerte.Motif.INCIDENT,
@@ -29,3 +30,6 @@ def creer_alerte_sur_incident(sender, instance, created, **kwargs):
         'boitier': boitier,
         'conducteur': getattr(boitier, 'conducteur', None),
     })
+    if niveau == Alerte.Niveau.CRITIQUE:
+        # Après validation de la transaction : on ne prévient pas pour un incident annulé.
+        transaction.on_commit(lambda: prevenir_choc_critique(alerte))
