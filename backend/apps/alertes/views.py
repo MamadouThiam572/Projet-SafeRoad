@@ -12,28 +12,33 @@ from .serializers import AlerteConducteurSerializer, AlerteProximiteSerializer, 
 
 
 class AlerteViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    queryset = Alerte.objects.all().select_related('incident', 'traitee_par')
+    queryset = Alerte.objects.all().select_related('incident', 'zone', 'boitier', 'conducteur')
     serializer_class = AlerteSerializer
     permission_classes = [EstAdministrateur]
     pagination_class = PaginationListeGestion
-    # Super admin : toutes les alertes. Administrateur régional : uniquement celles dont
-    # l'incident est rattaché à un boîtier de sa région (queryset vide si region=None).
-    # ANASER n'a de toute façon pas accès à ce ViewSet (EstAdministrateur, pas EstAdminOuAnaser)
-    # — comportement inchangé. S'applique à list/retrieve ET à l'action traiter() ci-dessous,
-    # qui passe par get_object() -> filter_queryset(get_queryset()) : rien à modifier dedans.
+    # Super admin : toutes les alertes. Administrateur régional : celles des boîtiers de sa
+    # région (queryset vide si region=None), quelle que soit la source. ANASER n'y a pas accès.
+    # S'applique aussi à `statut` via get_object() -> filter_queryset(get_queryset()).
     filter_backends = [FiltreRegional]
-    region_lookup_field = 'incident__boitier__region'
+    region_lookup_field = 'boitier__region'
 
-    @action(detail=True, methods=['patch'])
-    def traiter(self, request, pk=None):
+    @action(detail=True, methods=['patch'], url_path='statut')
+    def changer_statut(self, request, pk=None):
+        """« Prendre en charge » (nouvelle -> en_cours) puis « Marquer résolue » (-> traitee)."""
         alerte = self.get_object()
-        nouveau_statut = request.data.get('statut', Alerte.Statut.TRAITEE)
-        if nouveau_statut not in Alerte.Statut.values:
-            return Response({'detail': 'statut invalide.'}, status=400)
-        alerte.statut = nouveau_statut
-        alerte.traitee_par = request.user
-        alerte.traitee_le = timezone.now()
-        alerte.save(update_fields=['statut', 'traitee_par', 'traitee_le'])
+        nouveau = request.data.get('statut')
+        if not isinstance(nouveau, str) or (alerte.statut, nouveau) not in Alerte.TRANSITIONS:
+            return Response({'statut': f"Transition impossible : « {alerte.statut} » → « {nouveau} »."}, status=400)
+        maintenant = timezone.now()
+        alerte.statut = nouveau
+        champs = ['statut']
+        if nouveau == Alerte.Statut.EN_COURS:
+            alerte.prise_en_charge_par, alerte.prise_en_charge_le = request.user, maintenant
+            champs += ['prise_en_charge_par', 'prise_en_charge_le']
+        else:
+            alerte.traitee_par, alerte.traitee_le = request.user, maintenant
+            champs += ['traitee_par', 'traitee_le']
+        alerte.save(update_fields=champs)
         return Response(AlerteSerializer(alerte).data)
 
 

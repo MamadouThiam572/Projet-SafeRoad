@@ -5,8 +5,8 @@ from .models import Alerte, AlerteProximite
 
 @admin.register(Alerte)
 class AlerteAdmin(admin.ModelAdmin):
-    list_display = ['id', 'incident', 'statut', 'traitee_par', 'date_creation']
-    list_filter = ['statut']
+    list_display = ['id', 'source', 'niveau', 'motif', 'boitier', 'statut', 'traitee_par', 'date_creation']
+    list_filter = ['statut', 'source', 'niveau']
 
 
 @admin.register(AlerteProximite)

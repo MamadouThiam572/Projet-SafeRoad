@@ -1,9 +1,13 @@
+from io import StringIO
+
+from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.boitiers.models import Boitier
 from apps.comptes.models import Administrateur
+from apps.conducteurs.models import Conducteur
 from apps.incidents.models import Incident
 from apps.zones.models import Zone
 
@@ -27,9 +31,8 @@ def creer_incident_critique(boitier, **kwargs):
 
 
 class AlerteFiltrageRegionalTests(TestCase):
-    """Étape 4C : AlerteViewSet applique FiltreRegional via `incident__boitier__region` —
-    la région d'une alerte se déduit de son incident, lui-même déduit de son boîtier
-    (étape 4B). Aucun champ `region` propre ajouté à Alerte."""
+    """AlerteViewSet applique FiltreRegional via `boitier__region` : la région d'une alerte
+    est celle du boîtier concerné, quelle que soit la source de l'alerte."""
 
     @classmethod
     def setUpTestData(cls):
@@ -111,7 +114,7 @@ class AlerteFiltrageRegionalTests(TestCase):
 
     def test_admin_regional_peut_traiter_une_alerte_de_sa_region(self):
         self.client.force_authenticate(user=self.admin_dakar)
-        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_dakar.id}/traiter/', {'statut': 'traitee'}, format='json')
+        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_dakar.id}/statut/', {'statut': 'traitee'}, format='json')
         self.assertEqual(reponse.status_code, 200)
         self.alerte_dakar.refresh_from_db()
         self.assertEqual(self.alerte_dakar.statut, 'traitee')
@@ -120,7 +123,7 @@ class AlerteFiltrageRegionalTests(TestCase):
 
     def test_admin_regional_ne_peut_pas_traiter_une_alerte_d_une_autre_region(self):
         self.client.force_authenticate(user=self.admin_dakar)
-        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_thies.id}/traiter/', {'statut': 'traitee'}, format='json')
+        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_thies.id}/statut/', {'statut': 'traitee'}, format='json')
         self.assertEqual(reponse.status_code, 404)
         self.alerte_thies.refresh_from_db()
         self.assertEqual(self.alerte_thies.statut, 'nouvelle')  # inchangée
@@ -128,7 +131,7 @@ class AlerteFiltrageRegionalTests(TestCase):
 
     def test_traiter_refuse_un_statut_inconnu(self):
         self.client.force_authenticate(user=self.admin_dakar)
-        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_dakar.id}/traiter/', {'statut': 'xyz'}, format='json')
+        reponse = self.client.patch(f'/api/v1/alertes/{self.alerte_dakar.id}/statut/', {'statut': 'xyz'}, format='json')
         self.assertEqual(reponse.status_code, 400)
         self.alerte_dakar.refresh_from_db()
         self.assertEqual(self.alerte_dakar.statut, 'nouvelle')
@@ -229,3 +232,95 @@ class AlerteProximiteFiltrageRegionalTests(TestCase):
             'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE,
         }, format='json')
         self.assertEqual(reponse.status_code, 405)
+
+
+class AlerteSourcesTests(TestCase):
+    """Fil d'alertes de l'administrateur : incidents moyens/critiques (véhicule, ou zone s'ils
+    surviennent dans une zone reconnue), boîtiers hors ligne ; prise en charge puis traitement."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='dakar-sources@test.sn', password='x', nom='Sy', prenom='Astou',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+
+    def setUp(self):
+        self.boitier = Boitier.objects.create(region='dakar', numero_immatriculation='DK-4471-EF')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_dakar)
+
+    def test_un_incident_moyen_cree_une_alerte_vigilance_vehicule(self):
+        incident = creer_incident_critique(
+            self.boitier, niveau_gravite=Incident.NiveauGravite.MOYEN,
+            type_incident=Incident.TypeIncident.FREINAGE_BRUSQUE, vitesse_radar=48.6,
+        )
+        alerte = Alerte.objects.get(incident=incident)
+        self.assertEqual((alerte.source, alerte.niveau), ('vehicule', 'vigilance'))
+
+        donnees = self.client.get(f'/api/v1/alertes/{alerte.id}/').data
+        self.assertEqual(donnees['titre'], 'Freinage brusque détecté')
+        self.assertIn('49 km/h', donnees['description'])
+        self.assertEqual(donnees['lieu'], 'Dakar')
+        self.assertEqual(donnees['vehicule']['immatriculation'], 'DK-4471-EF')
+
+    def test_un_incident_dans_une_zone_reconnue_est_une_alerte_zone(self):
+        zone = Zone.objects.create(
+            latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=300, region='dakar',
+            statut_validation=Zone.StatutValidation.RECONNUE,
+        )
+        incident = creer_incident_critique(self.boitier)
+        alerte = Alerte.objects.get(incident=incident)
+        self.assertEqual((alerte.source, alerte.zone), ('zone', zone))
+        self.assertTrue(self.client.get(f'/api/v1/alertes/{alerte.id}/').data['titre'].endswith('sur une zone à risque'))
+
+    def test_une_zone_non_reconnue_ne_change_pas_la_source(self):
+        Zone.objects.create(
+            latitude_centre=LATITUDE_BASE, longitude_centre=LONGITUDE_BASE, rayon_metres=300, region='dakar',
+            statut_validation=Zone.StatutValidation.VALIDEE_TECHNIQUEMENT,
+        )
+        incident = creer_incident_critique(self.boitier)
+        self.assertEqual(Alerte.objects.get(incident=incident).source, 'vehicule')
+
+    def test_le_conducteur_qui_porte_le_boitier_est_rattache(self):
+        conducteur = Conducteur.objects.create_user(
+            email='moussa-sources@test.sn', password='x', nom='Diop', prenom='Moussa', boitier=self.boitier,
+        )
+        incident = creer_incident_critique(self.boitier)
+        alerte = Alerte.objects.get(incident=incident)
+        self.assertEqual(alerte.conducteur, conducteur)
+        self.assertEqual(self.client.get(f'/api/v1/alertes/{alerte.id}/').data['vehicule']['conducteur'], 'Moussa Diop')
+
+    def test_boitier_hors_ligne(self):
+        silencieux = Boitier.objects.create(
+            region='dakar', derniere_localisation_maj=timezone.now() - timezone.timedelta(minutes=45),
+        )
+        Boitier.objects.create(region='dakar', derniere_localisation_maj=timezone.now())  # actif récemment
+        Boitier.objects.create(region='dakar')  # n'a encore jamais émis
+        Boitier.objects.create(  # arrêté volontairement : pas d'alerte
+            region='dakar', statut=Boitier.Statut.INACTIF,
+            derniere_localisation_maj=timezone.now() - timezone.timedelta(hours=5),
+        )
+
+        call_command('verifier_boitiers_hors_ligne', stdout=StringIO())
+        call_command('verifier_boitiers_hors_ligne', stdout=StringIO())  # pas de doublon
+
+        alertes = Alerte.objects.filter(motif=Alerte.Motif.HORS_LIGNE)
+        self.assertEqual([a.boitier for a in alertes], [silencieux])
+        donnees = self.client.get(f'/api/v1/alertes/{alertes[0].id}/').data
+        self.assertEqual((donnees['source'], donnees['titre']), ('boitier', 'Boîtier hors ligne'))
+        self.assertIn('depuis 45 min', donnees['description'])
+
+    def test_prise_en_charge_puis_traitement(self):
+        alerte = Alerte.objects.get(incident=creer_incident_critique(self.boitier))
+        url = f'/api/v1/alertes/{alerte.id}/statut/'
+
+        self.assertEqual(self.client.patch(url, {'statut': 'en_cours'}, format='json').status_code, 200)
+        alerte.refresh_from_db()
+        self.assertEqual(alerte.prise_en_charge_par, self.admin_dakar)
+        self.assertIsNone(alerte.traitee_par)
+
+        self.assertEqual(self.client.patch(url, {'statut': 'traitee'}, format='json').status_code, 200)
+        alerte.refresh_from_db()
+        self.assertEqual((alerte.statut, alerte.traitee_par), ('traitee', self.admin_dakar))
+        self.assertEqual(self.client.patch(url, {'statut': 'nouvelle'}, format='json').status_code, 400)

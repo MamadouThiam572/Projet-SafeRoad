@@ -30,6 +30,11 @@ class ConfigurationSysteme(models.Model):
     poids_signalement_valide = models.FloatField(
         default=0.5, help_text="Points ajoutés au score d'une zone par signalement validé dans son rayon",
     )
+    # Au-delà de ce délai sans données, un boîtier actif déclenche une alerte « hors ligne »
+    # (commande verifier_boitiers_hors_ligne, à planifier toutes les quelques minutes).
+    delai_hors_ligne_minutes = models.PositiveIntegerField(
+        default=30, help_text="Minutes sans données avant qu'un boîtier actif soit signalé hors ligne",
+    )
     date_maj = models.DateTimeField(auto_now=True)
     modifie_par = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
 

@@ -7,13 +7,50 @@ from apps.zones.models import Zone
 
 
 class Alerte(models.Model):
+    """Fil d'alertes des administrateurs, toutes sources confondues :
+    - véhicule : incident moyen ou critique remonté par un boîtier ;
+    - zone : le même, survenu dans une zone reconnue par l'ANASER ;
+    - boîtier : boîtier actif qui n'envoie plus de données (commande verifier_boitiers_hors_ligne)."""
+
+    class Source(models.TextChoices):
+        ZONE = 'zone', 'Zone à risque'
+        VEHICULE = 'vehicule', 'Véhicule'
+        BOITIER = 'boitier', 'Boîtier'
+
+    class Niveau(models.TextChoices):
+        VIGILANCE = 'vigilance', 'Vigilance'
+        CRITIQUE = 'critique', 'Critique'
+
+    class Motif(models.TextChoices):
+        INCIDENT = 'incident', 'Incident détecté'
+        HORS_LIGNE = 'hors_ligne', 'Boîtier hors ligne'
+
     class Statut(models.TextChoices):
         NOUVELLE = 'nouvelle', 'Nouvelle'
-        VUE = 'vue', 'Vue'
+        EN_COURS = 'en_cours', 'En cours'
         TRAITEE = 'traitee', 'Traitée'
 
-    incident = models.OneToOneField(Incident, on_delete=models.CASCADE, related_name='alerte')
+    S = Statut
+    # « Prendre en charge » puis « Marquer résolue » ; une alerte peut aussi être résolue directement.
+    TRANSITIONS = {(S.NOUVELLE, S.EN_COURS), (S.NOUVELLE, S.TRAITEE), (S.EN_COURS, S.TRAITEE)}
+    del S
+
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.VEHICULE)
+    niveau = models.CharField(max_length=10, choices=Niveau.choices, default=Niveau.CRITIQUE)
+    motif = models.CharField(max_length=15, choices=Motif.choices, default=Motif.INCIDENT)
+    incident = models.OneToOneField(Incident, on_delete=models.CASCADE, null=True, blank=True, related_name='alerte')
+    zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes')
+    # Toujours renseigné à la création : c'est sa région qui sert au filtrage régional.
+    boitier = models.ForeignKey(Boitier, on_delete=models.CASCADE, null=True, related_name='alertes')
+    # Conducteur qui portait le boîtier au moment de l'alerte (voir aussi AlerteProximite).
+    conducteur = models.ForeignKey(
+        'conducteurs.Conducteur', on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes',
+    )
     statut = models.CharField(max_length=10, choices=Statut.choices, default=Statut.NOUVELLE)
+    prise_en_charge_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes_prises_en_charge'
+    )
+    prise_en_charge_le = models.DateTimeField(null=True, blank=True)
     traitee_par = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes_traitees'
     )
@@ -21,10 +58,11 @@ class Alerte(models.Model):
     date_creation = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        indexes = [models.Index(fields=['statut', 'source'])]
         ordering = ['-date_creation']
 
     def __str__(self):
-        return f"Alerte incident #{self.incident_id} ({self.statut})"
+        return f"Alerte {self.source} #{self.pk} ({self.statut})"
 
 
 class AlerteProximite(models.Model):
