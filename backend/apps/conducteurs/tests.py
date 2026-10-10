@@ -1,3 +1,7 @@
+import re
+from urllib.parse import parse_qs, urlparse
+
+from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -219,3 +223,46 @@ class IsolationDesTypesDeCompteTests(TestCase):
         reponse = client.get('/api/v1/conducteur/moi/')
         self.assertEqual(reponse.status_code, 200)
         self.assertEqual(reponse.data['email'], 'conducteur-iso@test.sn')
+
+
+class MotDePasseConducteurTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.conducteur = Conducteur.objects.create_user(
+            email='awa-mdp@test.sn', password='Mot-de-passe-solide-1', nom='Ba', prenom='Awa',
+        )
+
+    def test_mot_de_passe_oublie_puis_reinitialise(self):
+        client = APIClient()
+        client.post('/api/v1/auth/conducteur/mot-de-passe/oubli/', {'email': 'awa-mdp@test.sn'}, format='json')
+        self.assertEqual(len(mail.outbox), 1)
+        lien = re.search(r'https?://\S+', mail.outbox[0].body).group(0)
+        parametres = {k: v[0] for k, v in parse_qs(urlparse(lien).query).items()}
+        self.assertEqual(parametres['type'], 'conducteur')
+        reponse = client.post('/api/v1/auth/conducteur/mot-de-passe/reinitialiser/', {
+            'uid': parametres['uid'], 'token': parametres['token'], 'nouveau_mot_de_passe': 'Route-sure-2026!',
+        }, format='json')
+        self.assertEqual(reponse.status_code, 200, reponse.data)
+        reponse = client.post('/api/v1/auth/conducteur/login/', {'email': 'awa-mdp@test.sn', 'password': 'Route-sure-2026!'})
+        self.assertEqual(reponse.status_code, 200)
+
+    def test_le_lien_conducteur_ne_marche_pas_sur_un_compte_du_personnel(self):
+        # Deux modèles distincts : un uid de conducteur n'ouvre rien côté personnel.
+        client = APIClient()
+        client.post('/api/v1/auth/conducteur/mot-de-passe/oubli/', {'email': 'awa-mdp@test.sn'}, format='json')
+        lien = re.search(r'https?://\S+', mail.outbox[0].body).group(0)
+        parametres = {k: v[0] for k, v in parse_qs(urlparse(lien).query).items()}
+        reponse = client.post('/api/v1/auth/mot-de-passe/reinitialiser/', {
+            'uid': parametres['uid'], 'token': parametres['token'], 'nouveau_mot_de_passe': 'Route-sure-2026!',
+        }, format='json')
+        self.assertEqual(reponse.status_code, 400)
+
+    def test_le_conducteur_change_son_mot_de_passe(self):
+        client = APIClient()
+        client.force_authenticate(user=self.conducteur)
+        reponse = client.post('/api/v1/conducteur/moi/mot-de-passe/', {
+            'ancien_mot_de_passe': 'Mot-de-passe-solide-1', 'nouveau_mot_de_passe': 'Nouveau-solide-2026!',
+        })
+        self.assertEqual(reponse.status_code, 200)
+        self.conducteur.refresh_from_db()
+        self.assertTrue(self.conducteur.check_password('Nouveau-solide-2026!'))

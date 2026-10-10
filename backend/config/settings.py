@@ -139,6 +139,8 @@ REST_FRAMEWORK = {
         'inscription': '10/hour',
         # Signalements d'un même conducteur (par compte, pas par IP).
         'signalement': '30/hour',
+        # Demandes de lien / réinitialisations de mot de passe (par IP).
+        'mot_de_passe': '5/hour',
     },
 }
 
@@ -228,3 +230,17 @@ STATIC_URL = 'static/'
 # Fichiers envoyés par les utilisateurs (photos de signalements). Volontairement aucun
 # MEDIA_URL servi : chaque photo passe par une vue qui vérifie les droits d'accès.
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Page du frontend vers laquelle pointent les liens d'invitation / de réinitialisation.
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
+# E-mails (invitations, mots de passe oubliés). Par défaut, ils s'affichent dans le terminal
+# du serveur ; pour un vrai envoi, définir EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+# et les paramètres SMTP dans le .env.
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='SafeRoad <no-reply@saferoad.sn>')

@@ -2,6 +2,8 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from apps.core.mots_de_passe import verifier_nouveau_mot_de_passe
+
 from .models import Administrateur
 
 
@@ -51,7 +53,10 @@ class ValidationCoherenceRoleRegionMixin:
 class AdministrateurSerializer(ValidationCoherenceRoleRegionMixin, serializers.ModelSerializer):
     class Meta:
         model = Administrateur
-        fields = ['id', 'email', 'nom', 'prenom', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
+        fields = [
+            'id', 'email', 'nom', 'prenom', 'telephone', 'role', 'region', 'is_active', 'derniere_connexion',
+            'date_creation',
+        ]
         read_only_fields = ['id', 'derniere_connexion', 'date_creation']
 
 
@@ -64,17 +69,29 @@ class ProfilSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Administrateur
-        fields = ['id', 'email', 'nom', 'prenom', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
-        read_only_fields = ['id', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
+        fields = [
+            'id', 'email', 'nom', 'prenom', 'telephone', 'role', 'region', 'is_active', 'derniere_connexion',
+            'date_creation',
+        ]
+        read_only_fields = ['id', 'email', 'role', 'region', 'is_active', 'derniere_connexion', 'date_creation']
 
 
 class AdministrateurCreationSerializer(ValidationCoherenceRoleRegionMixin, serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8)
+    # Facultatif : sans mot de passe, le compte est créé inutilisable et la personne reçoit
+    # une invitation par e-mail pour choisir le sien (voir AdministrateurViewSet.perform_create).
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Administrateur
-        fields = ['id', 'email', 'nom', 'prenom', 'role', 'region', 'password']
+        fields = ['id', 'email', 'nom', 'prenom', 'telephone', 'role', 'region', 'password']
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs.get('password'):
+            donnees_compte = {k: v for k, v in attrs.items() if k != 'password'}
+            verifier_nouveau_mot_de_passe(attrs['password'], Administrateur(**donnees_compte), champ='password')
+        return attrs
 
     def create(self, validated_data):
-        password = validated_data.pop('password')
+        password = validated_data.pop('password', None)
         return Administrateur.objects.create_user(password=password, **validated_data)

@@ -33,6 +33,7 @@ class Administrateur(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     nom = models.CharField(max_length=100)
     prenom = models.CharField(max_length=100)
+    telephone = models.CharField(max_length=30, blank=True)
     role = models.CharField(max_length=15, choices=Role.choices, default=Role.ADMIN)
     # Portée régionale du compte : obligatoire pour un administrateur régional (role=admin),
     # toujours vide pour un super administrateur (portée nationale) ou un compte ANASER
