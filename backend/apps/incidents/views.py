@@ -1,15 +1,18 @@
+from django.db import transaction
 from rest_framework import mixins, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.boitiers.models import HistoriqueSync
 from apps.configuration.models import ConfigurationSysteme
-from apps.core.permissions import EstAdminOuAnaser, EstBoitier
+from apps.core.permissions import EstAdministrateur, EstAdminOuAnaser, EstBoitier
 from apps.core.regionalisation import FiltreRegional
 
-from .models import Incident
-from .serializers import IncidentIngestionSerializer, IncidentSerializer
+from .models import Incident, ObservationIncident
+from .serializers import IncidentIngestionSerializer, IncidentSerializer, ObservationIncidentSerializer
 from .utils import calculer_gravite, position_gps_fiable
 
 
@@ -80,9 +83,9 @@ class SyncBatchView(APIView):
 
 
 class IncidentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    # Lecture seule (List + Retrieve) : aucune action d'écriture n'existe sur ce ViewSet,
-    # les incidents sont créés exclusivement via IngestionView/SyncBatchView (EstBoitier),
-    # jamais par un compte administrateur — rien à protéger côté POST/PATCH/PUT/DELETE ici.
+    # Les incidents sont créés exclusivement par les boîtiers (IngestionView/SyncBatchView) :
+    # ni création, ni modification des données capteurs ici. Seul leur traitement
+    # administratif (statut, observations) est modifiable, par un administrateur.
     queryset = Incident.objects.all().select_related('boitier', 'zone')
     serializer_class = IncidentSerializer
     permission_classes = [EstAdminOuAnaser]
@@ -94,3 +97,52 @@ class IncidentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     # autre région renvoie 404, comme s'il n'existait pas.
     filter_backends = [FiltreRegional]
     region_lookup_field = 'boitier__region'
+
+    def get_permissions(self):
+        if self.action in ('changer_statut', 'ajouter_observation'):
+            # ANASER consulte les incidents mais ne les traite pas.
+            return [EstAdministrateur()]
+        return super().get_permissions()
+
+    def _tracer(self, incident, texte, statut_precedent='', statut_nouveau=''):
+        ObservationIncident.objects.create(
+            incident=incident, statut_precedent=statut_precedent, statut_nouveau=statut_nouveau, texte=texte,
+            acteur=self.request.user, role_acteur=getattr(self.request.user, 'role', ''),
+        )
+
+    @action(detail=True, methods=['patch'], url_path='statut')
+    def changer_statut(self, request, pk=None):
+        incident = self.get_object()
+        ancien = incident.statut
+        nouveau = request.data.get('statut')
+        commentaire = (request.data.get('commentaire') or '').strip()
+        role = getattr(request.user, 'role', None)
+
+        roles_autorises = Incident.TRANSITIONS.get((ancien, nouveau)) if isinstance(nouveau, str) else None
+        if roles_autorises is None:
+            raise ValidationError({'statut': f"Transition impossible : « {ancien} » → « {nouveau} »."})
+        if role not in roles_autorises:
+            raise PermissionDenied("Votre rôle ne permet pas cette décision sur l'incident.")
+        if (ancien, nouveau) in Incident.TRANSITIONS_A_MOTIVER and not commentaire:
+            raise ValidationError({'commentaire': "Le rejet d'une donnée capteur doit être motivé."})
+
+        with transaction.atomic():
+            incident.statut = nouveau
+            incident.save(update_fields=['statut'])
+            self._tracer(incident, commentaire, ancien, nouveau)
+        return Response(IncidentSerializer(incident).data)
+
+    @action(detail=True, methods=['post'], url_path='observations')
+    def ajouter_observation(self, request, pk=None):
+        incident = self.get_object()
+        texte = (request.data.get('texte') or '').strip()
+        if not texte:
+            raise ValidationError({'texte': "L'observation est vide."})
+        self._tracer(incident, texte)
+        return Response(ObservationIncidentSerializer(incident.observations.last()).data, status=201)
+
+    @action(detail=True, methods=['get'])
+    def historique(self, request, pk=None):
+        incident = self.get_object()
+        entrees = incident.observations.select_related('acteur')
+        return Response(ObservationIncidentSerializer(entrees, many=True).data)

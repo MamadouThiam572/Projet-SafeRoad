@@ -92,6 +92,13 @@ class GenererZonesDepuisIncidentsTests(TestCase):
         self.assertEqual(zone.score_danger, 3 + 0.5 * 2)  # poids par défaut 0,5
         self.assertEqual(zone.niveau_danger, Zone.NiveauDanger.VIGILANCE)
 
+    def test_un_incident_rejete_comme_faux_positif_ne_compte_pas(self):
+        config = ConfigurationSysteme.instance()
+        incidents = [self._creer_incident(decalage=0.0002 * i) for i in range(config.min_incidents_pour_zone)]
+        Incident.objects.filter(pk=incidents[0].pk).update(statut=Incident.Statut.REJETE)
+
+        self.assertEqual(generer_zones_depuis_incidents()['zones_creees'], 0)
+
     def test_sous_le_minimum_ne_cree_aucune_zone(self):
         config = ConfigurationSysteme.instance()
         for i in range(config.min_incidents_pour_zone - 1):

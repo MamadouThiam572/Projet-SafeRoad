@@ -241,3 +241,86 @@ class DonneesGpsIngestionTests(TestCase):
         self.assertEqual(
             sorted(Incident.objects.values_list('position_fiable', flat=True)), [False, True],
         )
+
+
+class TraitementIncidentTests(TestCase):
+    """Statut administratif d'un incident : nouveau → en cours → validé → clôturé, ou rejeté
+    (faux positif, motivé). Observations et décisions sont historisées ; l'ANASER consulte."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.boitier_dakar = Boitier.objects.create(region='dakar')
+        cls.boitier_thies = Boitier.objects.create(region='thies')
+        cls.super_admin = Administrateur.objects.create_user(
+            email='super-trt@test.sn', password='x', nom='Fall', prenom='Aida', role=Administrateur.Role.SUPER_ADMIN,
+        )
+        cls.admin_dakar = Administrateur.objects.create_user(
+            email='dakar-trt@test.sn', password='x', nom='Diop', prenom='Cheikh',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        cls.anaser = Administrateur.objects.create_user(
+            email='anaser-trt@test.sn', password='x', nom='Diallo', prenom='Assane', role=Administrateur.Role.ANASER,
+        )
+
+    def setUp(self):
+        self.incident = creer_incident(self.boitier_dakar)
+
+    def client_pour(self, utilisateur):
+        client = APIClient()
+        client.force_authenticate(user=utilisateur)
+        return client
+
+    def changer(self, utilisateur, statut, commentaire='', incident=None):
+        incident = incident or self.incident
+        return self.client_pour(utilisateur).patch(
+            f'/api/v1/incidents/{incident.id}/statut/', {'statut': statut, 'commentaire': commentaire}, format='json',
+        )
+
+    def test_un_incident_recu_est_nouveau(self):
+        self.assertEqual(self.incident.statut, Incident.Statut.NOUVEAU)
+
+    def test_parcours_complet_et_historique(self):
+        for statut in ('en_cours', 'valide', 'cloture'):
+            self.assertEqual(self.changer(self.admin_dakar, statut).status_code, 200)
+        self.client_pour(self.admin_dakar).post(
+            f'/api/v1/incidents/{self.incident.id}/observations/', {'texte': 'Gendarmerie prévenue'}, format='json',
+        )
+        historique = self.client_pour(self.anaser).get(f'/api/v1/incidents/{self.incident.id}/historique/').data
+        self.assertEqual(
+            [(h['statut_nouveau'], h['texte']) for h in historique],
+            [('en_cours', ''), ('valide', ''), ('cloture', ''), ('', 'Gendarmerie prévenue')],
+        )
+
+    def test_rejeter_un_faux_positif_doit_etre_motive(self):
+        self.assertEqual(self.changer(self.admin_dakar, 'rejete').status_code, 400)
+        reponse = self.changer(self.admin_dakar, 'rejete', 'Dos-d\'âne pris pour un choc')
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual(reponse.data['statut_libelle'], 'Rejeté (faux positif)')
+
+    def test_transition_impossible(self):
+        self.assertEqual(self.changer(self.admin_dakar, 'cloture').status_code, 400)  # pas validé avant
+        self.assertEqual(self.changer(self.admin_dakar, 'inconnu').status_code, 400)
+
+    def test_droits(self):
+        incident_thies = creer_incident(self.boitier_thies)
+        self.assertEqual(self.changer(self.admin_dakar, 'en_cours', incident=incident_thies).status_code, 404)
+        self.assertEqual(self.changer(self.anaser, 'en_cours').status_code, 403)
+        self.assertEqual(
+            self.client_pour(self.anaser).post(
+                f'/api/v1/incidents/{self.incident.id}/observations/', {'texte': 'x'}, format='json',
+            ).status_code,
+            403,
+        )
+        self.assertEqual(self.changer(self.super_admin, 'en_cours', incident=incident_thies).status_code, 200)
+
+    def test_observation_vide_refusee(self):
+        reponse = self.client_pour(self.admin_dakar).post(
+            f'/api/v1/incidents/{self.incident.id}/observations/', {'texte': '   '}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 400)
+
+    def test_les_donnees_capteurs_restent_non_modifiables(self):
+        reponse = self.client_pour(self.super_admin).patch(
+            f'/api/v1/incidents/{self.incident.id}/', {'vitesse_radar': 1}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 405)
