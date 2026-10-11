@@ -11,6 +11,50 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Premier message lisible d'une erreur DRF : { detail }, { champ: ["…"] },
+ * { non_field_errors: ["…"] } ou une simple liste — sinon `defaut`.
+ */
+function messageErreur(body: unknown, defaut: string): string {
+  if (typeof body === 'string') return body
+  if (Array.isArray(body)) return body.length ? messageErreur(body[0], defaut) : defaut
+  if (body && typeof body === 'object') {
+    const valeurs = Object.values(body as Record<string, unknown>)
+    for (const valeur of valeurs) {
+      const message = messageErreur(valeur, '')
+      if (message) return message
+    }
+  }
+  return defaut
+}
+
+/** POST public (sans compte) : inscription, formulaires du site, mot de passe oublié. */
+async function envoyerPublic<T>(path: string, corps: unknown, defaut: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corps),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new ApiError(res.status === 429 ? 'Trop de tentatives, réessayez plus tard.' : messageErreur(body, defaut), res.status)
+  }
+  return res.json()
+}
+
+export interface InscriptionConducteur {
+  email: string
+  nom: string
+  prenom: string
+  telephone: string
+  password: string
+}
+
+/** Création d'un compte conducteur — le seul type de compte ouvert au public. */
+export function inscriptionConducteur(donnees: InscriptionConducteur): Promise<{ id: string }> {
+  return envoyerPublic('/auth/conducteur/inscription/', donnees, 'Inscription impossible pour le moment.')
+}
+
 interface LoginResponse {
   access: string
   refresh?: string
@@ -185,7 +229,7 @@ async function authorizedFetch<T>(path: string, options: RequestInit = {}, retry
 
   if (!res.ok) {
     const body = await res.json().catch(() => null)
-    throw new ApiError(body?.detail ?? 'Une erreur est survenue.', res.status)
+    throw new ApiError(messageErreur(body, 'Une erreur est survenue.'), res.status)
   }
 
   if (res.status === 204) return null as T

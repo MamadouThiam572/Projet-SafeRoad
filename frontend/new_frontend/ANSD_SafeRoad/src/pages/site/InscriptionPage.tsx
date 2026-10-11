@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import loginVisualUrl from '@/assets/images/login-visual.png'
 import logoUrl from '@/assets/images/saferoad-logo.png'
+import { useAuth } from '@/context/AuthContext'
+import { ApiError, inscriptionConducteur, loginConducteur } from '@/lib/api'
 import { PATHS } from '@/routes/paths'
-import type { UserRole } from '@/types/auth'
-
-const PROFILES: { key: UserRole; label: string }[] = [
-  { key: 'conducteur', label: 'Conducteur / Client' },
-  { key: 'sous_admin', label: 'Admin Régional (ANASER / Forces de l’ordre)' },
-  { key: 'super_admin', label: 'Super Admin' },
-]
 
 const ARGUMENTS: { icon: string; title: string; text: string }[] = [
   {
@@ -59,7 +54,8 @@ export function InscriptionPage() {
     return () => observer.disconnect()
   }, [])
 
-  const [profile, setProfile] = useState<UserRole>('conducteur')
+  const { login } = useAuth()
+  const navigate = useNavigate()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -68,45 +64,56 @@ export function InscriptionPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const strength = useMemo(() => passwordStrength(password), [password])
 
   function clearFeedback() {
     if (error) setError('')
-    if (success) setSuccess('')
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim()) {
-      setSuccess('')
       setError('Merci d’indiquer votre prénom et votre nom.')
       return
     }
     if (!EMAIL_RE.test(email.trim())) {
-      setSuccess('')
       setError('L’adresse email saisie n’est pas valide.')
       return
     }
     if (phone.replace(/\D/g, '').length < 9) {
-      setSuccess('')
       setError('Le numéro de téléphone semble incomplet.')
       return
     }
     if (password.length < 8) {
-      setSuccess('')
       setError('Le mot de passe doit contenir au moins 8 caractères.')
       return
     }
     if (!acceptTerms) {
-      setSuccess('')
       setError('Vous devez accepter les conditions d’utilisation.')
       return
     }
     setError('')
-    const label = PROFILES.find((p) => p.key === profile)?.label ?? profile
-    setSuccess(`Compte ${label} enregistré localement — la connexion à l’authentification réelle reste à brancher.`)
+    setLoading(true)
+    try {
+      // Le backend applique aussi ses règles (email déjà utilisé, mot de passe trop courant…) :
+      // son message est affiché tel quel. Puis connexion directe vers l'espace conducteur.
+      await inscriptionConducteur({
+        email: email.trim(),
+        prenom: firstName.trim(),
+        nom: lastName.trim(),
+        telephone: phone.trim(),
+        password,
+      })
+      const { access, refresh } = await loginConducteur(email.trim(), password)
+      login(access, refresh)
+      navigate(PATHS.client.root, { replace: true })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Inscription impossible pour le moment.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -196,28 +203,15 @@ export function InscriptionPage() {
             <img src={logoUrl} alt="SafeRoad Sénégal" className="block h-[40px] w-auto" />
           </Link>
 
-          <h2 className="text-2xl font-extrabold tracking-tight text-ink">Créer un compte</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight text-ink">Créer un compte conducteur</h2>
           <p className="mt-2 text-sm text-body">Rejoignez SafeRoad Sénégal en quelques instants.</p>
-
-          <div className="mt-6 grid grid-cols-3 gap-2">
-            {PROFILES.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => {
-                  setProfile(p.key)
-                  clearFeedback()
-                }}
-                className={`rounded-xl border-[1.5px] px-2 py-3 text-center text-[11px] font-bold leading-tight transition-colors ${
-                  profile === p.key
-                    ? 'border-brand-600 bg-brand-50 text-brand-700'
-                    : 'border-line text-body hover:border-line-field'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {/* Seuls les conducteurs s'inscrivent eux-mêmes : les comptes du personnel (admin
+              régional, ANASER, super admin) sont créés par l'administration. */}
+          <p className="mt-3 flex items-start gap-2 rounded-[10px] bg-page px-3.5 py-2.5 text-xs font-semibold leading-relaxed text-body">
+            <span className="ic flex-none text-base text-icon-muted">info</span>
+            Vous êtes membre du personnel (administration régionale, ANASER) ? Votre compte est créé par
+            l’administrateur SafeRoad : vous recevrez un email pour l’activer.
+          </p>
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 max-[420px]:grid-cols-1">
@@ -352,35 +346,16 @@ export function InscriptionPage() {
               </div>
             )}
 
-            {success && (
-              <div className="flex items-center gap-2 rounded-[10px] border border-success-600 bg-success-50 px-3.5 py-3 text-xs font-semibold text-brand-700">
-                <span className="ic text-base">check_circle</span>
-                {success}
-              </div>
-            )}
-
             <button
               type="submit"
-              className="flex items-center justify-center gap-2 rounded-full bg-brand-600 py-[19px] text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-brand-700"
+              disabled={loading}
+              className="flex items-center justify-center gap-2 rounded-full bg-brand-600 py-[19px] text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-brand-700 disabled:cursor-wait disabled:opacity-70"
               style={{ boxShadow: '0 10px 26px rgba(14,158,122,.26)' }}
             >
               <span className="ic text-lg">person_add</span>
-              Créer mon compte
+              {loading ? 'Création du compte…' : 'Créer mon compte'}
             </button>
           </form>
-
-          <div className="my-6 flex items-center gap-3 text-xs font-semibold text-faint">
-            <span className="h-px flex-1 bg-line" />
-            Ou
-            <span className="h-px flex-1 bg-line" />
-          </div>
-
-          <button
-            type="button"
-            className="flex w-full items-center justify-center gap-2.5 rounded-full border-[1.5px] border-line bg-white py-3 text-sm font-bold text-ink hover:bg-page"
-          >
-            S’inscrire avec Google
-          </button>
 
           <p className="mt-7 text-center text-sm text-body">
             Vous avez déjà un compte ?{' '}
