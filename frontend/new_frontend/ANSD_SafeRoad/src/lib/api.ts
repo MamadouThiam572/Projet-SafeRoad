@@ -28,7 +28,7 @@ function messageErreur(body: unknown, defaut: string): string {
   return defaut
 }
 
-/** POST public (sans compte) : inscription, formulaires du site, mot de passe oublié. */
+/** POST public (sans compte) : formulaires du site, mot de passe oublié. */
 async function envoyerPublic<T>(path: string, corps: unknown, defaut: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
@@ -42,17 +42,33 @@ async function envoyerPublic<T>(path: string, corps: unknown, defaut: string): P
   return res.json()
 }
 
-export interface InscriptionConducteur {
-  email: string
-  nom: string
+export type TypeVehicule = 'voiture' | 'taxi' | 'bus' | 'camion' | 'moto' | 'autre'
+
+export interface DemandeInstallation {
   prenom: string
+  nom: string
   telephone: string
-  password: string
+  email: string
+  region: string
+  commune: string
+  adresse: string
+  type_vehicule: TypeVehicule
+  immatriculation: string
+  nombre_vehicules: number
+  disponibilites: string
+  message: string
+  contact_urgence_nom: string
+  contact_urgence_telephone: string
+  consentement_donnees: boolean
 }
 
-/** Création d'un compte conducteur — le seul type de compte ouvert au public. */
-export function inscriptionConducteur(donnees: InscriptionConducteur): Promise<{ id: string }> {
-  return envoyerPublic('/auth/conducteur/inscription/', donnees, 'Inscription impossible pour le moment.')
+/**
+ * Demande d'équipement envoyée depuis le site public. Il n'y a pas d'inscription libre :
+ * le compte du conducteur est créé par l'administrateur le jour de l'installation, et
+ * le conducteur reçoit alors un email pour choisir son mot de passe.
+ */
+export function envoyerDemandeInstallation(donnees: DemandeInstallation): Promise<{ id: number; statut: string }> {
+  return envoyerPublic('/demandes-installation/', donnees, 'Envoi impossible pour le moment.')
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,24 @@
  * centrer une carte de démonstration, pas une géolocalisation précise.
  */
 
+/** Les 14 régions, dans l'ordre et avec les slugs du backend (apps/core/regions.py). */
+export const REGIONS: { slug: string; label: string }[] = [
+  { slug: 'dakar', label: 'Dakar' },
+  { slug: 'diourbel', label: 'Diourbel' },
+  { slug: 'fatick', label: 'Fatick' },
+  { slug: 'kaffrine', label: 'Kaffrine' },
+  { slug: 'kaolack', label: 'Kaolack' },
+  { slug: 'kedougou', label: 'Kédougou' },
+  { slug: 'kolda', label: 'Kolda' },
+  { slug: 'louga', label: 'Louga' },
+  { slug: 'matam', label: 'Matam' },
+  { slug: 'saint_louis', label: 'Saint-Louis' },
+  { slug: 'sedhiou', label: 'Sédhiou' },
+  { slug: 'tambacounda', label: 'Tambacounda' },
+  { slug: 'thies', label: 'Thiès' },
+  { slug: 'ziguinchor', label: 'Ziguinchor' },
+]
+
 export const REGION_CENTERS: Record<string, [number, number]> = {
   dakar: [14.716, -17.4],
   diourbel: [14.655, -16.233],

@@ -47,10 +47,10 @@ export function SiteHeader() {
             Connexion
           </Link>
           <Link
-            to={PATHS.inscription}
+            to={PATHS.demandeInstallation}
             className="rounded-[11px] bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
           >
-            Inscription
+            Demander un boîtier
           </Link>
         </div>
 
@@ -90,11 +90,11 @@ export function SiteHeader() {
               Connexion
             </Link>
             <Link
-              to={PATHS.inscription}
+              to={PATHS.demandeInstallation}
               onClick={() => setMobileOpen(false)}
               className="rounded-[11px] bg-brand-600 py-2.5 text-center text-sm font-bold text-white"
             >
-              Inscription
+              Demander un boîtier
             </Link>
           </div>
         </div>

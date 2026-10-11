@@ -123,7 +123,7 @@ export function AccueilPage() {
 
             <div className="pointer-events-auto mt-8 flex flex-wrap gap-3">
               <Link
-                to={PATHS.inscription}
+                to={PATHS.demandeInstallation}
                 className="flex items-center gap-2 rounded-full bg-brand-600 px-[30px] py-[17px] text-sm font-bold text-white shadow-[0_14px_28px_rgba(14,158,122,.35)] transition-all duration-200 hover:-translate-y-[2px] hover:bg-brand-700"
               >
                 Commencer maintenant
@@ -278,13 +278,13 @@ export function AccueilPage() {
         <div className="container-site flex flex-col items-center gap-6 text-center">
           <h2 className="text-section-title max-w-xl text-white">Prêt à rouler plus sereinement ?</h2>
           <p className="max-w-md text-[15px] leading-[1.7] text-white/[.78]">
-            Créez un compte pour recevoir des alertes en temps réel sur les zones à risque autour de vous.
+            Équipez votre véhicule d’un boîtier SafeRoad pour être alerté à l’approche des zones à risque.
           </p>
           <Link
-            to={PATHS.inscription}
+            to={PATHS.demandeInstallation}
             className="flex items-center gap-2 whitespace-nowrap rounded-[11px] bg-brand-600 px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
           >
-            Créer un compte
+            Demander un boîtier
             <span className="ic text-lg">arrow_forward</span>
           </Link>
         </div>

@@ -37,7 +37,7 @@ import { ArticlePage } from '@/pages/site/ArticlePage'
 import { CartePage } from '@/pages/site/CartePage'
 import { ConnexionPage } from '@/pages/site/ConnexionPage'
 import { ContactPage } from '@/pages/site/ContactPage'
-import { InscriptionPage } from '@/pages/site/InscriptionPage'
+import { DemandeInstallationPage } from '@/pages/site/DemandeInstallationPage'
 import { MotDePasseOubliePage, ReinitialiserMotDePassePage } from '@/pages/site/MotDePassePages'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { PATHS } from '@/routes/paths'
@@ -53,9 +53,9 @@ export function AppRoutes() {
         <Route path={PATHS.actualites} element={<ActualitesPage />} />
         <Route path={PATHS.articlePattern} element={<ArticlePage />} />
         <Route path={PATHS.contact} element={<ContactPage />} />
+        <Route path={PATHS.demandeInstallation} element={<DemandeInstallationPage />} />
       </Route>
       <Route path={PATHS.connexion} element={<ConnexionPage />} />
-      <Route path={PATHS.inscription} element={<InscriptionPage />} />
       <Route path={PATHS.motDePasseOublie} element={<MotDePasseOubliePage />} />
       <Route path={PATHS.reinitialiserMotDePasse} element={<ReinitialiserMotDePassePage />} />
 

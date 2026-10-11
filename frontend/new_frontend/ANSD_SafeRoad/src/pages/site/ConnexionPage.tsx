@@ -276,9 +276,9 @@ export function ConnexionPage() {
           </button>
 
           <p className="mt-7 text-center text-sm text-body">
-            Vous n'avez pas de compte ?{' '}
-            <Link to={PATHS.inscription} className="font-bold text-brand-600 hover:text-brand-700">
-              Inscription
+            Pas encore équipé ?{' '}
+            <Link to={PATHS.demandeInstallation} className="font-bold text-brand-600 hover:text-brand-700">
+              Demander un boîtier
             </Link>
           </p>
 

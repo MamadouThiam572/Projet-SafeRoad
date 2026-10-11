@@ -5,7 +5,7 @@
  * Ne figurent PAS dans cette liste :
  *  - le Super Admin connecté (déjà représenté dans l'en-tête ; il ne peut pas
  *    modifier ni désactiver son propre compte depuis cette page) ;
- *  - les conducteurs (leurs comptes se gèrent via l'inscription et la page Boîtiers).
+ *  - les conducteurs (leurs comptes naissent à l'installation du boîtier, voir la page Boîtiers).
  *
  * Les comptes ANASER ont une portée NATIONALE : leur région est toujours `null`.
  *

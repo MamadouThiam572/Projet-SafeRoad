@@ -8,7 +8,8 @@ export const PATHS = {
   articlePattern: '/actualites/:id',
   contact: '/contact',
   connexion: '/connexion',
-  inscription: '/inscription',
+  /** Seule porte d'entrée publique pour devenir conducteur (pas d'inscription libre). */
+  demandeInstallation: '/demande-installation',
   /** Doit correspondre aux liens envoyés par email par le backend (FRONTEND_URL). */
   motDePasseOublie: '/mot-de-passe-oublie',
   reinitialiserMotDePasse: '/reinitialiser-mot-de-passe',
