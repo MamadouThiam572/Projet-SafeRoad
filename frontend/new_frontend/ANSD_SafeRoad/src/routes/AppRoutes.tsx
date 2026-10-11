@@ -38,6 +38,7 @@ import { CartePage } from '@/pages/site/CartePage'
 import { ConnexionPage } from '@/pages/site/ConnexionPage'
 import { ContactPage } from '@/pages/site/ContactPage'
 import { InscriptionPage } from '@/pages/site/InscriptionPage'
+import { MotDePasseOubliePage, ReinitialiserMotDePassePage } from '@/pages/site/MotDePassePages'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { PATHS } from '@/routes/paths'
 
@@ -55,6 +56,8 @@ export function AppRoutes() {
       </Route>
       <Route path={PATHS.connexion} element={<ConnexionPage />} />
       <Route path={PATHS.inscription} element={<InscriptionPage />} />
+      <Route path={PATHS.motDePasseOublie} element={<MotDePasseOubliePage />} />
+      <Route path={PATHS.reinitialiserMotDePasse} element={<ReinitialiserMotDePassePage />} />
 
       {/* Conducteur / Client */}
       <Route element={<ProtectedRoute allowedRoles={['conducteur']} />}>

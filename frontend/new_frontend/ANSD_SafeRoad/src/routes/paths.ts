@@ -9,6 +9,9 @@ export const PATHS = {
   contact: '/contact',
   connexion: '/connexion',
   inscription: '/inscription',
+  /** Doit correspondre aux liens envoyés par email par le backend (FRONTEND_URL). */
+  motDePasseOublie: '/mot-de-passe-oublie',
+  reinitialiserMotDePasse: '/reinitialiser-mot-de-passe',
 
   client: {
     root: '/client',

@@ -190,12 +190,12 @@ export function ConnexionPage() {
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
             <label className="block">
-              <span className="mb-2 block text-xs font-bold text-body">EMAIL OU NUMÉRO DE TÉLÉPHONE</span>
+              <span className="mb-2 block text-xs font-bold text-body">ADRESSE EMAIL</span>
               <input
-                type="text"
+                type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                autoComplete="username"
+                autoComplete="email"
                 className="w-full rounded-[11px] border-[1.5px] border-line-field bg-field px-3.5 py-3 text-sm font-medium text-ink outline-none focus:border-brand-600"
               />
             </label>
@@ -231,9 +231,12 @@ export function ConnexionPage() {
                 />
                 Se souvenir de moi
               </label>
-              <a href="#" className="font-bold text-brand-600 hover:text-brand-700">
+              <Link
+                to={`${PATHS.motDePasseOublie}?type=${role === 'conducteur' ? 'conducteur' : 'personnel'}`}
+                className="font-bold text-brand-600 hover:text-brand-700"
+              >
                 Mot de passe oublié ?
-              </a>
+              </Link>
             </div>
 
             {error && (

@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { ChangementMotDePasse } from '@/pages/site/MotDePassePages'
 
 export function ProfilPage() {
   const { user } = useAuth()
+  const [changementMotDePasse, setChangementMotDePasse] = useState(false)
 
   if (!user) return null
 
@@ -31,6 +34,22 @@ export function ProfilPage() {
           <p className="m-0 text-[11px] font-bold uppercase tracking-wide text-faint">Portée</p>
           <p className="m-0 mt-1 text-sm font-bold text-ink">Vue nationale (toutes régions)</p>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-line bg-white p-5 shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="m-0 text-sm font-bold text-ink">Mot de passe</p>
+          <button
+            type="button"
+            onClick={() => setChangementMotDePasse((v) => !v)}
+            className="min-h-[44px] rounded-[9px] border border-brand-200 bg-brand-50 px-4 text-[12.5px] font-bold text-brand-600 hover:bg-brand-100"
+          >
+            Modifier le mot de passe
+          </button>
+        </div>
+        {changementMotDePasse && (
+          <ChangementMotDePasse type="personnel" onFermer={() => setChangementMotDePasse(false)} />
+        )}
       </div>
     </div>
   )

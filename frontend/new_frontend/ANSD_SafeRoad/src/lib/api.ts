@@ -55,6 +55,50 @@ export function inscriptionConducteur(donnees: InscriptionConducteur): Promise<{
   return envoyerPublic('/auth/conducteur/inscription/', donnees, 'Inscription impossible pour le moment.')
 }
 
+// ---------------------------------------------------------------------------
+// Mots de passe. Personnel (admin, ANASER, super admin) et conducteurs sont deux
+// types de comptes distincts côté backend, avec chacun leurs routes.
+// ---------------------------------------------------------------------------
+
+export type TypeCompte = 'personnel' | 'conducteur'
+
+const PREFIXE_MOT_DE_PASSE: Record<TypeCompte, string> = {
+  personnel: '/auth/mot-de-passe',
+  conducteur: '/auth/conducteur/mot-de-passe',
+}
+
+/** Envoie un lien de réinitialisation par email (réponse identique que le compte existe ou non). */
+export function demanderReinitialisation(type: TypeCompte, email: string): Promise<{ detail: string }> {
+  return envoyerPublic(`${PREFIXE_MOT_DE_PASSE[type]}/oubli/`, { email }, 'Demande impossible pour le moment.')
+}
+
+/** Choix du mot de passe depuis le lien reçu par email (invitation ou mot de passe oublié). */
+export function reinitialiserMotDePasse(
+  type: TypeCompte,
+  uid: string,
+  token: string,
+  nouveauMotDePasse: string,
+): Promise<{ detail: string }> {
+  return envoyerPublic(
+    `${PREFIXE_MOT_DE_PASSE[type]}/reinitialiser/`,
+    { uid, token, nouveau_mot_de_passe: nouveauMotDePasse },
+    'Ce lien est invalide ou a expiré.',
+  )
+}
+
+/** Changement du mot de passe par l'utilisateur connecté. */
+export function changerMotDePasse(
+  type: TypeCompte,
+  ancienMotDePasse: string,
+  nouveauMotDePasse: string,
+): Promise<{ detail: string }> {
+  const chemin = type === 'conducteur' ? '/conducteur/moi/mot-de-passe/' : '/auth/mot-de-passe/changer/'
+  return authorizedFetch(chemin, {
+    method: 'POST',
+    body: JSON.stringify({ ancien_mot_de_passe: ancienMotDePasse, nouveau_mot_de_passe: nouveauMotDePasse }),
+  })
+}
+
 interface LoginResponse {
   access: string
   refresh?: string

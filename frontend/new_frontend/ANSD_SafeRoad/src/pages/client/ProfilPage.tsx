@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { CLIENT_REPORTS } from '@/data/clientReports'
 import { DRIVER_PROFILE, PREF_TOGGLES, PROFILE_FIELDS } from '@/data/clientProfile'
 import { CLIENT_TRIPS } from '@/data/clientTrips'
+import { ChangementMotDePasse } from '@/pages/site/MotDePassePages'
 
 function initialValues(): Record<string, string> {
   return Object.fromEntries(PROFILE_FIELDS.map((f) => [f.key, f.value]))
@@ -31,6 +32,7 @@ function ToggleSwitch({ on, onClick, label }: { on: boolean; onClick: () => void
 
 export function ProfilPage() {
   const [editing, setEditing] = useState(false)
+  const [changementMotDePasse, setChangementMotDePasse] = useState(false)
   const [values, setValues] = useState<Record<string, string>>(initialValues)
   const [prefs, setPrefs] = useState<Record<string, boolean>>(initialPrefs)
 
@@ -194,15 +196,21 @@ export function ProfilPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="m-0 text-[13px] font-bold text-ink">Mot de passe</p>
-                <p className="m-0 mt-1.5 text-[11.5px] font-medium text-muted">Modifié il y a 3 mois</p>
+                <p className="m-0 mt-1.5 text-[11.5px] font-medium text-muted">
+                  Utilisé pour vous connecter à votre espace conducteur
+                </p>
               </div>
               <button
                 type="button"
+                onClick={() => setChangementMotDePasse((v) => !v)}
                 className="min-h-[44px] flex-none whitespace-nowrap rounded-[9px] border border-brand-200 bg-brand-50 px-4 text-[12.5px] font-bold text-brand-600 transition-colors hover:bg-brand-100"
               >
                 Modifier le mot de passe
               </button>
             </div>
+            {changementMotDePasse && (
+              <ChangementMotDePasse type="conducteur" onFermer={() => setChangementMotDePasse(false)} />
+            )}
           </div>
 
           <div className="relative overflow-hidden rounded-2xl bg-navy-900 p-5.5">
