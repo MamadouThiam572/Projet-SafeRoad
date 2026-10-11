@@ -32,7 +32,7 @@ class Conducteur(AbstractBaseUser):
     contact_urgence_nom = models.CharField(max_length=150, blank=True)
     contact_urgence_telephone = models.CharField(max_length=30, blank=True)
     # Rattachement fait par un administrateur une fois le boîtier physiquement installé sur
-    # le véhicule — jamais à l'inscription, où le conducteur n'a pas encore de boîtier.
+    # le véhicule : à l'installation (qui crée aussi le compte) ou par une affectation ultérieure.
     boitier = models.OneToOneField(
         Boitier, on_delete=models.SET_NULL, null=True, blank=True, related_name='conducteur'
     )

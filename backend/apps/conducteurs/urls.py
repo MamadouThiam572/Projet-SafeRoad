@@ -9,7 +9,6 @@ from .views import (
     ConducteurGestionViewSet,
     ConnexionConducteurView,
     DeconnexionConducteurView,
-    InscriptionConducteurView,
     MoiConducteurView,
     RafraichirConducteurView,
 )
@@ -18,7 +17,8 @@ router = DefaultRouter()
 router.register('conducteurs', ConducteurGestionViewSet, basename='conducteur')
 
 urlpatterns = [
-    path('auth/conducteur/inscription/', InscriptionConducteurView.as_view(), name='conducteur-inscription'),
+    # Pas d'inscription libre : le compte d'un conducteur est créé à l'installation de son
+    # boîtier (POST /demandes-installation/{id}/installer/), avec un email d'activation.
     path('auth/conducteur/login/', ConnexionConducteurView.as_view(), name='conducteur-login'),
     path('auth/conducteur/refresh/', RafraichirConducteurView.as_view(), name='conducteur-refresh'),
     path('auth/conducteur/logout/', DeconnexionConducteurView.as_view(), name='conducteur-logout'),

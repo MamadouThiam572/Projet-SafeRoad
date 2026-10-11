@@ -136,8 +136,6 @@ REST_FRAMEWORK = {
         # Login uniquement (apps.core.throttling.LoginRateThrottle) : par IP, pas par compte
         # — un attaquant ne peut pas contourner la limite en changeant l'email essayé.
         'login': '5/min',
-        # Création de comptes conducteur (AllowAny) : freine les inscriptions en masse par IP.
-        'inscription': '10/hour',
         # Signalements d'un même conducteur (par compte, pas par IP).
         'signalement': '30/hour',
         # Demandes de lien / réinitialisations de mot de passe (par IP).

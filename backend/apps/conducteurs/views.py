@@ -4,7 +4,6 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings
@@ -15,7 +14,7 @@ from apps.core.permissions import EstAdministrateur, EstConducteur
 from apps.core.throttling import LoginRateThrottle
 
 from .models import Conducteur
-from .serializers import ConducteurGestionSerializer, ConducteurInscriptionSerializer, ProfilConducteurSerializer
+from .serializers import ConducteurGestionSerializer, ProfilConducteurSerializer
 
 # Clé de cache utilisée pour révoquer un refresh token conducteur (voir ConducteurLogoutView).
 _CLE_JTI_REVOQUE = 'conducteur:jti-revoque:{jti}'
@@ -64,18 +63,6 @@ def _refresh_conducteur_valide(raw_refresh):
         raise AuthenticationFailed("Ce token a été révoqué (déconnexion).")
 
     return refresh
-
-
-class InscriptionConducteurView(APIView):
-    permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'inscription'
-
-    def post(self, request):
-        serializer = ConducteurInscriptionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class ConnexionConducteurView(APIView):

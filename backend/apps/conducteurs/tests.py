@@ -11,43 +11,16 @@ from apps.comptes.models import Administrateur
 from .models import Conducteur
 
 
-class InscriptionConducteurTests(TestCase):
-    def setUp(self):
-        cache.clear()
+class PasDInscriptionLibreTests(TestCase):
+    """Un compte conducteur ne se crée qu'à l'installation d'un boîtier (voir apps/demandes) :
+    l'ancienne route d'inscription publique n'existe plus."""
 
-    def test_inscription_cree_le_compte(self):
-        client = APIClient()
-        reponse = client.post('/api/v1/auth/conducteur/inscription/', {
-            'email': 'conducteur@test.sn', 'password': 'mot-de-passe-suffisant',
-            'nom': 'Diatta', 'prenom': 'Fatou', 'telephone': '+221771234567',
+    def test_la_route_d_inscription_n_existe_plus(self):
+        reponse = APIClient().post('/api/v1/auth/conducteur/inscription/', {
+            'email': 'conducteur@test.sn', 'password': 'mot-de-passe-suffisant', 'nom': 'Diatta', 'prenom': 'Fatou',
         })
-        self.assertEqual(reponse.status_code, 201)
-        self.assertTrue(Conducteur.objects.filter(email='conducteur@test.sn').exists())
-        self.assertNotIn('password', reponse.data)
-
-    def test_inscription_refuse_un_email_deja_utilise(self):
-        Conducteur.objects.create_user(email='existe@test.sn', password='x', nom='A', prenom='B')
-        client = APIClient()
-        reponse = client.post('/api/v1/auth/conducteur/inscription/', {
-            'email': 'existe@test.sn', 'password': 'mot-de-passe-suffisant', 'nom': 'C', 'prenom': 'D',
-        })
-        self.assertEqual(reponse.status_code, 400)
-
-    def test_inscription_refuse_un_mot_de_passe_trop_court(self):
-        client = APIClient()
-        reponse = client.post('/api/v1/auth/conducteur/inscription/', {
-            'email': 'court@test.sn', 'password': 'x', 'nom': 'C', 'prenom': 'D',
-        })
-        self.assertEqual(reponse.status_code, 400)
-
-    def test_inscription_refuse_un_mot_de_passe_trop_courant(self):
-        client = APIClient()
-        reponse = client.post('/api/v1/auth/conducteur/inscription/', {
-            'email': 'courant@test.sn', 'password': 'password123', 'nom': 'C', 'prenom': 'D',
-        })
-        self.assertEqual(reponse.status_code, 400)
-        self.assertIn('password', reponse.data)
-        self.assertFalse(Conducteur.objects.filter(email='courant@test.sn').exists())
+        self.assertEqual(reponse.status_code, 404)
+        self.assertFalse(Conducteur.objects.exists())
 
 
 class ConnexionConducteurTests(TestCase):
