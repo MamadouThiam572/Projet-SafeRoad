@@ -204,8 +204,8 @@ export function DemandeInstallationPage() {
               <fieldset className="flex flex-col gap-4">
                 <legend className="mb-1 text-base font-extrabold text-ink">Contact d’urgence (facultatif)</legend>
                 <p className="m-0 text-[12.5px] leading-relaxed text-body">
-                  En cas de choc grave, le boîtier prévient directement cette personne par SMS, avec la position du
-                  véhicule.
+                  SafeRoad sert à prévenir les accidents. Si l’un survient malgré tout, le boîtier prévient
+                  directement cette personne par SMS, avec la position du véhicule.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Champ label="Nom du proche">

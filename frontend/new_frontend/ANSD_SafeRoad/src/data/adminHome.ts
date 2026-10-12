@@ -48,7 +48,7 @@ export const ADMIN_EVENTS: AdminEvent[] = [
     icon: 'report',
     tint: '#dc3a2f',
     soft: '#fdeeec',
-    title: 'Accident signalé',
+    title: 'Obstacle critique détecté',
     location: 'RN3 – Km 12',
     ago: 'il y a 12 min',
     badge: { label: 'Critique', tint: '#dc3a2f', soft: '#fdeeec' },
@@ -170,7 +170,7 @@ export interface IncidentBreakdown {
 
 /** Répartition des 45 incidents du mois par type — alimente le donut. */
 export const INCIDENT_BREAKDOWN: IncidentBreakdown[] = [
-  { label: 'Accidents', pct: 40, color: '#2b6cb0' },
+  { label: 'Excès de vitesse', pct: 40, color: '#2b6cb0' },
   { label: 'Freinages brusques', pct: 24, color: '#7c3aed' },
   { label: 'Virages dangereux', pct: 16, color: '#e8940c' },
   { label: 'Route défectueuse', pct: 12, color: '#dc3a2f' },

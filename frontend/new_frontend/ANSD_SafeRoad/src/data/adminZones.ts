@@ -45,7 +45,7 @@ export const ZONES_RISQUE: ZoneRisque[] = [
     id: 'ZD-001',
     nom: 'RN3 – Km 12',
     localite: 'Axe principal',
-    type: 'Accident',
+    type: 'Obstacle critique',
     niveau: 'critique',
     incidents: 23,
     avgSpeed: 87,
@@ -65,7 +65,7 @@ export const ZONES_RISQUE: ZoneRisque[] = [
       {
         auteur: 'ANASER',
         date: '09/09/2026 14:20',
-        texte: 'Accident signalé sur cette zone, le trafic est ralenti.',
+        texte: 'Obstacles critiques répétés sur cette zone : signalisation à renforcer.',
       },
     ],
   },

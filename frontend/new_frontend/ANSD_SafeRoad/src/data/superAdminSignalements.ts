@@ -310,11 +310,11 @@ export function nearbyIncidents(s: Signalement): NearbyIncident[] {
 
 /** Types d'incidents qui confirment plutôt un type de danger signalé. */
 const RELATED: Record<DangerType, string[]> = {
-  nid_de_poule: ['Nid-de-poule', 'Secousse dangereuse'],
+  nid_de_poule: ['Route dégradée', 'Secousse dangereuse'],
   chaussee_degradee: ['Route dégradée', 'Secousse dangereuse'],
-  chaussee_inondee: ['Route dégradée', "Freinage d'urgence"],
-  signalisation_absente: ["Freinage d'urgence", 'Choc détecté', 'Excès de vitesse'],
-  obstacle: ["Freinage d'urgence", 'Choc détecté', 'Secousse dangereuse'],
+  chaussee_inondee: ['Route dégradée', 'Freinage brusque'],
+  signalisation_absente: ['Freinage brusque', 'Virage dangereux', 'Excès de vitesse'],
+  obstacle: ['Freinage brusque', 'Obstacle critique', 'Secousse dangereuse'],
   autre: [],
 }
 

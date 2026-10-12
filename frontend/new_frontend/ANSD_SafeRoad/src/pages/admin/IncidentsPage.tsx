@@ -34,9 +34,9 @@ function matchesPeriode(ts: string, periode: Periode, reference: Date): boolean 
 }
 
 const TYPE_ICON: Record<string, string> = {
-  'Accident signalé': 'car_crash',
+  'Obstacle critique': 'warning',
   'Freinage brusque': 'speed',
-  'Collision signalée': 'report',
+  'Secousse dangereuse': 'waves',
   'Incident matériel': 'build',
   'Excès de vitesse': 'speed',
   Autre: 'help',

@@ -26,14 +26,18 @@ import { RECENT_DAYS, REGION_SERIES, REGION_STATS, SERIES_DATES, SERIES_DAYS } f
 export type Gravite = 'critique' | 'elevee' | 'moyenne' | 'faible'
 export type Statut = 'nouveau' | 'en_cours' | 'valide' | 'cloture'
 
+/**
+ * Signaux de risque détectés par le boîtier (croisement des capteurs), avant tout accident :
+ * mêmes types que le backend (apps/incidents/models.py, Incident.TypeIncident).
+ */
 export const INCIDENT_TYPES = [
   'Excès de vitesse',
-  "Freinage d'urgence",
+  'Freinage brusque',
   'Accélération brusque',
+  'Virage dangereux',
   'Secousse dangereuse',
-  'Nid-de-poule',
   'Route dégradée',
-  'Choc détecté',
+  'Obstacle critique',
 ] as const
 export type IncidentType = (typeof INCIDENT_TYPES)[number]
 
@@ -82,12 +86,12 @@ export const STATUT_META: Record<Statut, { label: string; soft: string; text: st
 
 export const TYPE_ICON: Record<IncidentType, string> = {
   'Excès de vitesse': 'speed',
-  "Freinage d'urgence": 'front_hand',
+  'Freinage brusque': 'front_hand',
   'Accélération brusque': 'moving',
+  'Virage dangereux': 'turn_sharp_right',
   'Secousse dangereuse': 'waves',
-  'Nid-de-poule': 'circle',
   'Route dégradée': 'edit_road',
-  'Choc détecté': 'car_crash',
+  'Obstacle critique': 'warning',
 }
 
 /** Un incident nécessite une attention particulière : critique et pas encore traité. */
@@ -215,23 +219,23 @@ function weighted<T>(items: T[], weight: (t: T) => number): T {
 
 const TYPE_WEIGHT: Record<IncidentType, number> = {
   'Excès de vitesse': 28,
-  "Freinage d'urgence": 20,
+  'Freinage brusque': 20,
   'Accélération brusque': 14,
+  'Virage dangereux': 10,
   'Secousse dangereuse': 12,
-  'Nid-de-poule': 10,
-  'Route dégradée': 9,
-  'Choc détecté': 7,
+  'Route dégradée': 19,
+  'Obstacle critique': 7,
 }
 
 /** Gravité « de base » d'un type : sert à corréler type et gravité. */
 const TYPE_SEVERITY: Record<IncidentType, number> = {
   'Excès de vitesse': 0.55,
-  "Freinage d'urgence": 0.6,
+  'Freinage brusque': 0.6,
   'Accélération brusque': 0.45,
+  'Virage dangereux': 0.5,
   'Secousse dangereuse': 0.4,
-  'Nid-de-poule': 0.2,
   'Route dégradée': 0.15,
-  'Choc détecté': 0.9,
+  'Obstacle critique': 0.7,
 }
 
 /** Poids par heure : pointes du matin et du soir. */
