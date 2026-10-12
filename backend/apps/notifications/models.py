@@ -18,6 +18,7 @@ class NotificationAdmin(models.Model):
         ZONE_SOUMISE_ANASER = 'zone_soumise_anaser', 'Zone soumise à l\'ANASER'
         DECISION_ANASER = 'decision_anaser', 'Décision de l\'ANASER'
         NOUVELLE_DEMANDE = 'nouvelle_demande', 'Nouvelle demande'
+        BOITIER_INCONNU = 'boitier_inconnu', 'Boîtier non enregistré détecté'
 
     destinataire = models.ForeignKey(
         settings.AUTH_USER_MODEL,

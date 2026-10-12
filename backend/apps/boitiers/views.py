@@ -17,7 +17,7 @@ from apps.configuration.models import ConfigurationSysteme
 from apps.core.cache_keys import CACHE_CLE_ZONES_ACTIVES, CACHE_TTL_ZONES_ACTIVES_SECONDES
 from apps.core.geo import boite_englobante
 from apps.core.pagination import PaginationListeGestion
-from apps.core.permissions import EstAdministrateur, EstAnaser, EstBoitier
+from apps.core.permissions import EstAdministrateur, EstAnaser, EstBoitier, EstSuperAdministrateur
 from apps.core.regionalisation import FiltreRegional
 from apps.zones.models import Zone
 
@@ -270,6 +270,26 @@ class BoitierViewSet(viewsets.ModelViewSet):
             'api_key': api_key_en_clair,
             'ancienne_cle_valide_jusqu_a': boitier.api_key_hash_ancien_expire_le,
         })
+
+    @action(detail=False, methods=['get'], url_path='detectes', permission_classes=[EstSuperAdministrateur])
+    def detectes(self, request):
+        """Adresses MAC entendues en MQTT ces dernières 24 h sans fiche correspondante : le super
+        admin crée la fiche (avec la MAC) et le boîtier est reconnu à son message suivant."""
+        import re
+
+        from apps.notifications.models import NotificationAdmin
+
+        vues = {}
+        for notification in NotificationAdmin.objects.filter(
+            type_notification=NotificationAdmin.TypeNotification.BOITIER_INCONNU,
+            date_creation__gte=timezone.now() - timezone.timedelta(hours=24),
+        ).order_by('date_creation'):
+            trouve = re.search(r'MAC ([0-9A-F:]{17})', notification.message)
+            if trouve:
+                vues[trouve.group(1)] = {'adresse_mac': trouve.group(1), 'message': notification.message,
+                                         'derniere_detection': notification.date_creation}
+        enregistrees = set(Boitier.objects.filter(adresse_mac__in=vues).values_list('adresse_mac', flat=True))
+        return Response([d for mac, d in vues.items() if mac not in enregistrees])
 
     @action(detail=False, methods=['get'], permission_classes=[EstBoitier])
     def configuration(self, request):

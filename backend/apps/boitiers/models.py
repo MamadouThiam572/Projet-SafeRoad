@@ -8,6 +8,16 @@ from django.utils import timezone
 from apps.core.regions import Region
 
 
+def normaliser_mac(valeur):
+    """« aa-bb-cc-dd-ee-ff », « AABBCCDDEEFF »… -> « AA:BB:CC:DD:EE:FF », ou None si ce n'est pas une MAC."""
+    if not isinstance(valeur, str):
+        return None
+    hexa = ''.join(c for c in valeur.upper() if c in '0123456789ABCDEF')
+    if len(hexa) != 12 or len(valeur.strip()) not in (12, 14, 17):
+        return None
+    return ':'.join(hexa[i:i + 2] for i in range(0, 12, 2))
+
+
 class Boitier(models.Model):
     class Statut(models.TextChoices):
         # État administratif/opérationnel — fixé par un administrateur, jamais déduit
@@ -27,6 +37,9 @@ class Boitier(models.Model):
     proprietaire_nom = models.CharField(max_length=150, blank=True)
     proprietaire_telephone = models.CharField(max_length=30, blank=True)
     numero_immatriculation = models.CharField(max_length=30, blank=True)
+    # Adresse MAC de l'ESP32 (unique, gravée en usine), envoyée par le firmware dans chaque message
+    # MQTT (« mac ») : c'est elle qui dit quel boîtier parle. Format AA:BB:CC:DD:EE:FF.
+    adresse_mac = models.CharField(max_length=17, unique=True, null=True, blank=True)
     # Région administrative d'affectation du boîtier — distincte de sa position GPS réelle
     # (derniere_latitude/longitude ci-dessous) : un boîtier affecté à Dakar peut circuler
     # ailleurs. Jamais déduite automatiquement du GPS. Reste nullable au niveau du modèle

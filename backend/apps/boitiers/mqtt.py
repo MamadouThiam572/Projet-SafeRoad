@@ -9,14 +9,16 @@ Le boîtier publie sur un broker MQTT (HiveMQ en Wi-Fi, Mosquitto en GSM), et no
   `alerte` qui le reconnaît, pas le topic.
 
 Le serveur fait confiance au classement du boîtier (pas de recalcul de gravité à partir d'un
-seul capteur). Tant que le firmware n'envoie ni `boitier_id` ni `horodatage`, les messages sont
-attribués à MQTT_BOITIER_PAR_DEFAUT (le prototype) et datés à leur réception.
+seul capteur). Le boîtier est reconnu par son adresse MAC (`mac`, à ajouter par le firmware) ;
+un message sans `mac` ni `boitier_id` est attribué à MQTT_BOITIER_PAR_DEFAUT (le prototype).
+Sans `horodatage`, un message est daté à sa réception.
 """
 
 import json
 import logging
 import math
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
@@ -27,7 +29,7 @@ from apps.configuration.models import ConfigurationSysteme
 from apps.incidents.models import Incident
 from apps.incidents.utils import gravite_pour, position_gps_fiable
 
-from .models import Boitier
+from .models import Boitier, normaliser_mac
 from .views import enregistrer_position
 
 logger = logging.getLogger(__name__)
@@ -69,13 +71,55 @@ def _nombre(valeur):
     return float(valeur)
 
 
+# Un même boîtier inconnu ne génère qu'une notification par fenêtre (il publie toutes les 500 ms).
+FENETRE_NOTIFICATION_INCONNU = timedelta(hours=1)
+
+
+def _signaler_boitier_inconnu(mac, donnees):
+    """Boîtier qui publie avec une MAC non enregistrée : prévient le(s) super admin(s), qui
+    pourront créer sa fiche depuis la page Boîtiers (voir BoitierViewSet.detectes)."""
+    from apps.comptes.models import Administrateur
+    from apps.notifications.models import NotificationAdmin
+
+    T = NotificationAdmin.TypeNotification
+    deja = NotificationAdmin.objects.filter(
+        type_notification=T.BOITIER_INCONNU, message__contains=mac,
+        date_creation__gte=timezone.now() - FENETRE_NOTIFICATION_INCONNU,
+    ).exists()
+    if deja:
+        return
+    latitude, longitude = _nombre(donnees.get('latitude')), _nombre(donnees.get('longitude'))
+    ou = f" près de {latitude:.4f}, {longitude:.4f}" if latitude is not None and longitude is not None else ''
+    for admin in Administrateur.objects.filter(role=Administrateur.Role.SUPER_ADMIN, is_active=True):
+        NotificationAdmin.objects.create(
+            destinataire=admin, type_notification=T.BOITIER_INCONNU,
+            message=f"Boîtier non enregistré détecté (MAC {mac}){ou}."[:255],
+        )
+
+
 def _boitier_du_message(donnees):
-    identifiant = donnees.get('boitier_id') or settings.MQTT_BOITIER_PAR_DEFAUT
+    """Le boîtier qui parle : `boitier_id` (UUID) s'il est envoyé, sinon son adresse MAC
+    (`mac`), sinon le boîtier par défaut (prototype dont le firmware n'envoie encore rien).
+    Une MAC inconnue n'est jamais attribuée au boîtier par défaut : elle est signalée."""
+    actifs = Boitier.objects.filter(statut=Boitier.Statut.ACTIF)
+    if donnees.get('boitier_id'):
+        try:
+            return actifs.filter(pk=uuid.UUID(str(donnees['boitier_id']))).first()
+        except ValueError:
+            return None
+    if 'mac' in donnees:
+        mac = normaliser_mac(donnees.get('mac'))
+        if mac is None:
+            return None
+        boitier = Boitier.objects.filter(adresse_mac=mac).first()
+        if boitier is None:
+            _signaler_boitier_inconnu(mac, donnees)
+            return None
+        return boitier if boitier.statut == Boitier.Statut.ACTIF else None
     try:
-        identifiant = uuid.UUID(str(identifiant))
+        return actifs.filter(pk=uuid.UUID(str(settings.MQTT_BOITIER_PAR_DEFAUT))).first()
     except ValueError:
         return None
-    return Boitier.objects.filter(pk=identifiant, statut=Boitier.Statut.ACTIF).first()
 
 
 def _horodatage(donnees, maintenant):

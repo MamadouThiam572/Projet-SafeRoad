@@ -3,10 +3,25 @@ from rest_framework import serializers
 
 from apps.configuration.models import ConfigurationSysteme
 
-from .models import Boitier, HistoriqueBoitier, HistoriqueSync
+from .models import Boitier, HistoriqueBoitier, HistoriqueSync, normaliser_mac
 
 
-class BoitierSerializer(serializers.ModelSerializer):
+class ValidationMacMixin:
+    def validate_adresse_mac(self, valeur):
+        if valeur in (None, ''):
+            return None
+        mac = normaliser_mac(valeur)
+        if mac is None:
+            raise serializers.ValidationError("Adresse MAC invalide (format attendu : AA:BB:CC:DD:EE:FF).")
+        autres = Boitier.objects.filter(adresse_mac=mac)
+        if getattr(self, 'instance', None) is not None:
+            autres = autres.exclude(pk=self.instance.pk)
+        if autres.exists():
+            raise serializers.ValidationError("Cette adresse MAC est déjà associée à un autre boîtier.")
+        return mac
+
+
+class BoitierSerializer(ValidationMacMixin, serializers.ModelSerializer):
     statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
     region_libelle = serializers.CharField(source='get_region_display', read_only=True)
     latence_ms = serializers.SerializerMethodField()
@@ -19,7 +34,7 @@ class BoitierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Boitier
         fields = [
-            'id', 'proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation',
+            'id', 'proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation', 'adresse_mac',
             'region', 'region_libelle',
             'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
             'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
@@ -87,10 +102,10 @@ class BoitierAnaserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class BoitierCreationSerializer(serializers.ModelSerializer):
+class BoitierCreationSerializer(ValidationMacMixin, serializers.ModelSerializer):
     class Meta:
         model = Boitier
-        fields = ['proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation', 'region', 'statut']
+        fields = ['proprietaire_nom', 'proprietaire_telephone', 'numero_immatriculation', 'adresse_mac', 'region', 'statut']
         # Le modèle garde region nullable (boîtiers historiques créés avant le filtrage
         # régional, voir Boitier.region) mais toute NOUVELLE création doit désormais fournir
         # une région explicite — sans quoi elle deviendrait invisible pour tout administrateur

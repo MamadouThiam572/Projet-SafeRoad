@@ -833,3 +833,67 @@ class EcouteMqttTests(TestCase):
         self.assertEqual(resume['boitier'], str(autre.id))
         autre.refresh_from_db()
         self.assertEqual(autre.dernier_reseau, 'gsm')
+
+
+class IdentificationParMacTests(TestCase):
+    """Le boîtier qui publie en MQTT est reconnu par son adresse MAC ; une MAC inconnue n'est
+    jamais attribuée au boîtier par défaut, elle est signalée au super admin."""
+
+    def setUp(self):
+        cache.clear()
+        self.prototype = Boitier.objects.create(region='dakar', numero_immatriculation='PROTO')
+        self.bambey = Boitier.objects.create(region='diourbel', adresse_mac='24:6F:28:AA:BB:CC')
+        self.super_admin = Administrateur.objects.create_user(
+            email='super-mac@test.sn', password='x', nom='Sarr', prenom='Awa', role=Administrateur.Role.SUPER_ADMIN,
+        )
+        reglages = override_settings(MQTT_BOITIER_PAR_DEFAUT=str(self.prototype.id))
+        reglages.enable()
+        self.addCleanup(reglages.disable)
+
+    def publier(self, **champs):
+        return traiter_message('saferoad/data', json.dumps({'vitesse_vehicule': 0.0, 'canal_reseau': 'wifi', **champs}))
+
+    def test_la_mac_designe_le_boitier_quel_que_soit_son_format(self):
+        resume = self.publier(mac='24-6f-28-aa-bb-cc')
+        self.assertEqual(resume['boitier'], str(self.bambey.id))
+        self.bambey.refresh_from_db()
+        self.assertIsNotNone(self.bambey.derniere_communication)
+
+    def test_sans_mac_le_message_va_au_prototype(self):
+        self.assertEqual(self.publier()['boitier'], str(self.prototype.id))
+
+    def test_mac_inconnue_signalee_puis_reconnue_apres_creation_de_la_fiche(self):
+        from apps.notifications.models import NotificationAdmin
+
+        for _ in range(3):  # il publie toutes les 500 ms : une seule notification
+            self.assertIsNone(self.publier(mac='AA:BB:CC:DD:EE:01', latitude=14.6, longitude=-16.2))
+        self.assertEqual(NotificationAdmin.objects.filter(type_notification='boitier_inconnu').count(), 1)
+        self.prototype.refresh_from_db()
+        self.assertIsNone(self.prototype.derniere_communication)  # pas attribué au prototype
+
+        client = APIClient()
+        client.force_authenticate(user=self.super_admin)
+        detectes = client.get('/api/v1/boitiers/detectes/').data
+        self.assertEqual([d['adresse_mac'] for d in detectes], ['AA:BB:CC:DD:EE:01'])
+
+        reponse = client.post('/api/v1/boitiers/', {'region': 'diourbel', 'adresse_mac': 'aabbccddee01'}, format='json')
+        self.assertEqual(reponse.status_code, 201, reponse.data)
+        self.assertEqual(reponse.data['adresse_mac'], 'AA:BB:CC:DD:EE:01')
+        self.assertEqual(client.get('/api/v1/boitiers/detectes/').data, [])
+        self.assertEqual(self.publier(mac='AA:BB:CC:DD:EE:01')['boitier'], reponse.data['id'])
+
+    def test_mac_invalide_ou_deja_prise_refusee(self):
+        client = APIClient()
+        client.force_authenticate(user=self.super_admin)
+        for mac in ('pas-une-mac', '24:6F:28:AA:BB:CC'):
+            reponse = client.patch(f'/api/v1/boitiers/{self.prototype.id}/', {'adresse_mac': mac}, format='json')
+            self.assertEqual(reponse.status_code, 400, mac)
+
+    def test_les_admins_regionaux_ne_voient_pas_les_boitiers_detectes(self):
+        admin = Administrateur.objects.create_user(
+            email='admin-mac@test.sn', password='x', nom='Diop', prenom='Modou',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        self.assertEqual(client.get('/api/v1/boitiers/detectes/').status_code, 403)
