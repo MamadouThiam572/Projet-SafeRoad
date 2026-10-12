@@ -241,6 +241,7 @@ class TableauDeBordTests(TestCase):
     def test_tableau_de_bord_du_conducteur(self):
         d = self.donnees(self.conducteur, '/api/v1/conducteur/tableau-de-bord/')
         self.assertEqual(d['boitier']['id'], str(self.boitier_dakar.id))
+        self.assertIs(d['boitier']['en_ligne'], True)  # a communiqué à l'instant
         self.assertEqual(d['signalements'], {'total': 1, 'en_attente': 1, 'valides': 0})
         client = APIClient()
         client.force_authenticate(user=self.conducteur)

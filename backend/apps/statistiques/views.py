@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from apps.alertes.models import Alerte, AlerteProximite
 from apps.boitiers.models import Boitier
+from apps.boitiers.serializers import BoitierSerializer
 from apps.comptes.models import Administrateur
 from apps.conducteurs.models import Conducteur
 from apps.configuration.models import ConfigurationSysteme
@@ -303,6 +304,7 @@ class TableauDeBordConducteurView(APIView):
             'boitier': {
                 'id': str(boitier.id), 'immatriculation': boitier.numero_immatriculation or None,
                 'statut': boitier.statut, 'derniere_activite': boitier.derniere_communication,
+                'en_ligne': BoitierSerializer().get_en_ligne(boitier),
             } if boitier else None,
             'alertes': alertes.aggregate(
                 total=Count('id'),
