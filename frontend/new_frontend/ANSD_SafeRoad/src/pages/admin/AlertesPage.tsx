@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ADMIN_ALERTS,
+  alerteDepuisApi,
   ALERT_SOURCE_LABEL,
   ALERT_STATUS_META,
   type AdminAlert,
@@ -9,6 +9,9 @@ import {
 } from '@/data/adminAlerts'
 import { useAuth } from '@/context/AuthContext'
 import type { RiskLevel } from '@/data/adminHome'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { ApiError, changerStatutAlerte, getAlertes } from '@/lib/api'
+import { regionLabel } from '@/lib/regions'
 
 const LEVEL_META: Record<RiskLevel, { label: string; color: string; soft: string; text: string }> = {
   critique: { label: 'Critique', color: '#dc3a2f', soft: '#fdeeec', text: '#dc3a2f' },
@@ -40,7 +43,7 @@ function nextActionLabel(status: AlertStatus): string {
   return status === 'nouvelle' ? 'Prendre en charge' : 'Marquer résolue'
 }
 
-function AlertCard({ alert, onAdvance }: { alert: AdminAlert; onAdvance: (id: string) => void }) {
+function AlertCard({ alert, onAdvance, busy }: { alert: AdminAlert; onAdvance: (id: string) => void; busy: boolean }) {
   const level = LEVEL_META[alert.level]
   const status = ALERT_STATUS_META[alert.status]
   const source = ALERT_SOURCE_LABEL[alert.source]
@@ -99,7 +102,8 @@ function AlertCard({ alert, onAdvance }: { alert: AdminAlert; onAdvance: (id: st
         <button
           type="button"
           onClick={() => onAdvance(alert.id)}
-          className="flex-none whitespace-nowrap rounded-full bg-brand-600 px-4 py-2.5 text-[11.5px] font-bold text-white transition-colors hover:bg-brand-700"
+          disabled={busy}
+          className="flex-none disabled:opacity-60 whitespace-nowrap rounded-full bg-brand-600 px-4 py-2.5 text-[11.5px] font-bold text-white transition-colors hover:bg-brand-700"
         >
           {nextActionLabel(alert.status)}
         </button>
@@ -114,8 +118,12 @@ function AlertCard({ alert, onAdvance }: { alert: AdminAlert; onAdvance: (id: st
 
 export function AlertesPage() {
   const { user } = useAuth()
-  const region = user?.region ?? 'Dakar'
-  const [alerts, setAlerts] = useState<AdminAlert[]>(ADMIN_ALERTS)
+  const region = regionLabel(user?.region)
+  // Fil réel de la région (le backend filtre), rafraîchi toutes les 10 s.
+  const { donnees, erreur, maj, recharger } = useEnDirect(getAlertes, 10_000)
+  const alerts = useMemo(() => (donnees ?? []).map((a) => alerteDepuisApi(a, maj)), [donnees, maj])
+  const [enCoursId, setEnCoursId] = useState<string | null>(null)
+  const [erreurAction, setErreurAction] = useState('')
   const [tab, setTab] = useState<SourceTabKey>('toutes')
   const [hideResolved, setHideResolved] = useState(false)
 
@@ -129,14 +137,20 @@ export function AlertesPage() {
   const enCours = alerts.filter((a) => a.status === 'en_cours').length
   const traitees = alerts.filter((a) => a.status === 'traitee').length
 
-  const handleAdvance = (id: string) => {
-    setAlerts((prev) =>
-      prev.map((a) => {
-        if (a.id !== id) return a
-        const next = nextStatus(a.status)
-        return next ? { ...a, status: next } : a
-      }),
-    )
+  const handleAdvance = async (id: string) => {
+    const alerte = alerts.find((a) => a.id === id)
+    const next = alerte && nextStatus(alerte.status)
+    if (!next) return
+    setEnCoursId(id)
+    setErreurAction('')
+    try {
+      await changerStatutAlerte(Number(id), next)
+      await recharger()
+    } catch (err) {
+      setErreurAction(err instanceof ApiError ? err.message : 'Action non enregistrée : serveur injoignable.')
+    } finally {
+      setEnCoursId(null)
+    }
   }
 
   return (
@@ -162,6 +176,10 @@ export function AlertesPage() {
           </span>
         </div>
       </section>
+
+      {(erreur || erreurAction) && (
+        <p className="mx-6 mt-3 text-xs font-semibold text-danger-600">{erreurAction || erreur}</p>
+      )}
 
       <section className="mx-6 mt-4 flex flex-wrap items-center gap-2.5">
         {TABS.map((t) => {
@@ -197,7 +215,7 @@ export function AlertesPage() {
 
       <section className="mx-6 mt-4 flex flex-col gap-3 pb-2">
         {filtered.map((alert) => (
-          <AlertCard key={alert.id} alert={alert} onAdvance={handleAdvance} />
+          <AlertCard key={alert.id} alert={alert} onAdvance={(id) => void handleAdvance(id)} busy={enCoursId === alert.id} />
         ))}
 
         {filtered.length === 0 && (

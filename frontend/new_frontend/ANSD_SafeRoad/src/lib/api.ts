@@ -481,6 +481,52 @@ export function getHistoriqueZone(id: number): Promise<HistoriqueZoneApi[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Alertes. Admin : fil à traiter (incidents moyens/critiques, incidents en zone reconnue,
+// boîtiers hors ligne), limité à sa région par le backend. Conducteur : alertes « zone à
+// risque » reçues pendant qu'il portait le boîtier (zones reconnues par l'ANASER seulement).
+// ---------------------------------------------------------------------------
+
+export type StatutAlerte = 'nouvelle' | 'en_cours' | 'traitee'
+
+export interface AlerteApi {
+  id: number
+  source: 'zone' | 'vehicule' | 'boitier'
+  niveau: 'vigilance' | 'critique'
+  motif: 'incident' | 'hors_ligne'
+  statut: StatutAlerte
+  titre: string
+  description: string
+  lieu: string | null
+  vehicule: { boitier: string; immatriculation: string | null; conducteur: string | null } | null
+  date_creation: string
+}
+
+export function getAlertes(): Promise<AlerteApi[]> {
+  return authorizedFetch('/alertes/')
+}
+
+export function changerStatutAlerte(id: number, statut: StatutAlerte): Promise<AlerteApi> {
+  return authorizedFetch(`/alertes/${id}/statut/`, { method: 'PATCH', body: JSON.stringify({ statut }) })
+}
+
+export interface AlerteConducteurApi {
+  id: number
+  zone: number
+  zone_nom: string
+  niveau_danger: 'normale' | 'vigilance' | 'critique'
+  region_libelle: string | null
+  distance_metres: number
+  canal_led: 'vert' | 'jaune' | 'rouge'
+  canal_buzzer_declenche: boolean
+  canal_audio_declenche: boolean
+  date_creation: string
+}
+
+export function getAlertesConducteur(): Promise<AlerteConducteurApi[]> {
+  return authorizedFetch('/conducteur/alertes/')
+}
+
+// ---------------------------------------------------------------------------
 // Tableaux de bord (GET /tableau-de-bord/) : chiffres calculés en direct par le backend, selon
 // le rôle (admin régional = sa région ; super admin et ANASER = national + détail par région).
 // ---------------------------------------------------------------------------

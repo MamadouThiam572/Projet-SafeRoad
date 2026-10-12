@@ -1,6 +1,18 @@
 import { useMemo, useState } from 'react'
-import { CLIENT_ALERTS, type AlertKind, type ClientAlert } from '@/data/clientAlerts'
+import { alerteConducteurDepuisApi, type ClientAlert } from '@/data/clientAlerts'
 import { RISK_META } from '@/data/clientZones'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getAlertesConducteur } from '@/lib/api'
+
+/** Dernière lecture du fil (préférence locale à ce navigateur). */
+const CLE_LU = 'saferoad_alertes_lues_le'
+function lireDerniereLecture(): number {
+  try {
+    return Number(localStorage.getItem(CLE_LU)) || 0
+  } catch {
+    return 0
+  }
+}
 
 const BADGE_LABEL: Record<ClientAlert['level'], string> = {
   critique: 'Critique',
@@ -8,17 +20,17 @@ const BADGE_LABEL: Record<ClientAlert['level'], string> = {
   normale: 'Normal',
 }
 
-type TabKey = 'toutes' | 'zone' | 'trajet'
+type TabKey = 'toutes' | 'critique' | 'vigilance'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'toutes', label: 'Toutes' },
-  { key: 'zone', label: 'Zones' },
-  { key: 'trajet', label: 'Trajets' },
+  { key: 'critique', label: 'Critiques' },
+  { key: 'vigilance', label: 'Vigilance' },
 ]
 
 function tabCount(key: TabKey, alerts: ClientAlert[]): number {
   if (key === 'toutes') return alerts.length
-  return alerts.filter((a) => a.kind === (key as AlertKind)).length
+  return alerts.filter((a) => a.level === key).length
 }
 
 function AlertCard({ alert, unread }: { alert: ClientAlert; unread: boolean }) {
@@ -72,12 +84,26 @@ function AlertCard({ alert, unread }: { alert: ClientAlert; unread: boolean }) {
 
 export function AlertesPage() {
   const [tab, setTab] = useState<TabKey>('toutes')
-  const [unreadIds, setUnreadIds] = useState<Set<string>>(() => new Set(CLIENT_ALERTS.map((a) => a.id)))
+  const { donnees, erreur, maj } = useEnDirect(getAlertesConducteur, 15_000)
+  const CLIENT_ALERTS = useMemo(() => (donnees ?? []).map((a) => alerteConducteurDepuisApi(a, maj)), [donnees, maj])
+  const [luLe, setLuLe] = useState(lireDerniereLecture)
+  const nonLue = (a: ClientAlert) => !!a.date && Date.parse(a.date) > luLe
+  const nbNonLues = CLIENT_ALERTS.filter(nonLue).length
+
+  const toutLire = () => {
+    const t = Date.now()
+    setLuLe(t)
+    try {
+      localStorage.setItem(CLE_LU, String(t))
+    } catch {
+      // Stockage indisponible (navigation privée) : le « lu » ne vaut que pour cette visite.
+    }
+  }
 
   const filtered = useMemo(() => {
     if (tab === 'toutes') return CLIENT_ALERTS
-    return CLIENT_ALERTS.filter((a) => a.kind === tab)
-  }, [tab])
+    return CLIENT_ALERTS.filter((a) => a.level === tab)
+  }, [tab, CLIENT_ALERTS])
 
   return (
     <div>
@@ -86,8 +112,9 @@ export function AlertesPage() {
           Mes alertes
         </h1>
         <p className="mt-2.5 text-sm leading-6 text-body">
-          Suivez en temps réel les alertes de danger sur votre itinéraire.
+          Les alertes émises par votre boîtier à l'approche des zones à risque reconnues par l'ANASER.
         </p>
+        {erreur && <p className="mt-2 text-xs font-semibold text-danger-600">{erreur}</p>}
       </section>
 
       <section className="mx-6 mt-4 flex flex-wrap items-center gap-2.5">
@@ -111,8 +138,8 @@ export function AlertesPage() {
         <div className="flex-1" />
         <button
           type="button"
-          onClick={() => setUnreadIds(new Set())}
-          disabled={unreadIds.size === 0}
+          onClick={toutLire}
+          disabled={nbNonLues === 0}
           className="whitespace-nowrap rounded-full border border-brand-200 bg-brand-50 px-[18px] py-3 text-[12.5px] font-bold text-brand-700 transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Tout marquer comme lu
@@ -121,13 +148,15 @@ export function AlertesPage() {
 
       <section className="mx-6 mt-4 flex flex-col gap-3">
         {filtered.map((alert) => (
-          <AlertCard key={alert.id} alert={alert} unread={unreadIds.has(alert.id)} />
+          <AlertCard key={alert.id} alert={alert} unread={nonLue(alert)} />
         ))}
 
         {filtered.length === 0 && (
           <div className="rounded-2xl border border-line bg-white px-5 py-14 text-center shadow-card">
             <span className="ic text-4xl text-success-600">notifications_off</span>
-            <p className="mt-3.5 text-[15px] font-extrabold text-ink">Aucune alerte dans cette catégorie</p>
+            <p className="mt-3.5 text-[15px] font-extrabold text-ink">
+              {donnees ? 'Aucune alerte dans cette catégorie' : 'Chargement des alertes…'}
+            </p>
             <p className="mt-1.5 text-sm leading-6 text-body">Bonne route — rien à signaler pour l’instant.</p>
           </div>
         )}
