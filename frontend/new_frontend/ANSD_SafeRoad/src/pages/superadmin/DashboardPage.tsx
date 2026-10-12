@@ -5,16 +5,16 @@ import { Link } from 'react-router-dom'
 import 'leaflet/dist/leaflet.css'
 import {
   EVENT_META,
-  REGION_SERIES,
-  REGION_STATS,
+  nationalDepuisApi,
   SERIES_DATES,
   SERIES_DAYS,
   SERIES_LABELS,
-  SYSTEM_EVENTS,
   type RegionStat,
   type SeriesKey,
 } from '@/data/superAdminHome'
-import { REGION_CENTERS } from '@/lib/regions'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getTableauDeBord } from '@/lib/api'
+import { REGION_CENTERS, REGIONS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
 /**
@@ -52,7 +52,10 @@ const SERIES_META: Record<SeriesKey, { label: string; color: string }> = {
 
 /** Couleur d'identité d'une région dans le tableau (décorative : elle n'exprime aucun classement). */
 const REGION_DOT = ['#e8940c', '#2b6cb0', '#1f9d55', '#7c3aed', '#0e8fb5', '#dc3a2f']
-const regionDot = (slug: string) => REGION_DOT[Math.max(0, REGION_STATS.findIndex((r) => r.slug === slug)) % REGION_DOT.length]
+const regionDot = (slug: string) => REGION_DOT[Math.max(0, REGIONS.findIndex((r) => r.slug === slug)) % REGION_DOT.length]
+
+/** Chiffres nationaux sur les 90 derniers jours (toutes les périodes du sélecteur en découlent). */
+const chargerNational = () => getTableauDeBord(SERIES_DAYS)
 
 const NATIONAL_FOCUS = { center: [14.45, -14.6] as [number, number], zoom: 7 }
 type Focus = typeof NATIONAL_FOCUS
@@ -61,8 +64,8 @@ const nf = new Intl.NumberFormat('fr-FR')
 /** Espace insécable classique : l'espace fine de `Intl` est invisible dans certaines polices. */
 const fmt = (n: number) => nf.format(n).replace(/ /g, ' ')
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
@@ -182,7 +185,14 @@ interface Row extends RegionStat {
 }
 
 export function DashboardPage() {
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Données réelles du backend, rechargées toutes les 30 s.
+  const { donnees, erreur, maj, recharger } = useEnDirect(chargerNational, 30_000)
+  const {
+    regionStats: REGION_STATS,
+    regionSeries: REGION_SERIES,
+    events: SYSTEM_EVENTS,
+  } = useMemo(() => nationalDepuisApi(donnees), [donnees])
+  const lastRefresh = formatNow(maj)
   const [regionFilter, setRegionFilter] = useState<'toutes' | string>('toutes')
   const [periode, setPeriode] = useState<Periode>('30j')
   const [customFrom, setCustomFrom] = useState(SERIES_DATES[SERIES_DAYS - 30])
@@ -219,13 +229,13 @@ export function DashboardPage() {
 
   const regions = useMemo<RegionStat[]>(
     () => (regionFilter === 'toutes' ? REGION_STATS : REGION_STATS.filter((r) => r.slug === regionFilter)),
-    [regionFilter],
+    [regionFilter, REGION_STATS],
   )
 
   const rows = useMemo<Row[]>(() => {
     const sum = (slug: string, key: SeriesKey) => REGION_SERIES[slug][key].slice(win.start, win.end).reduce((a, b) => a + b, 0)
     return regions.map((r) => ({ ...r, incidentsP: sum(r.slug, 'incidents'), alertesP: sum(r.slug, 'alertes') }))
-  }, [regions, win])
+  }, [regions, win, REGION_SERIES])
 
   /** Tri du tableau « Activité par région » : un outil de comparaison, pas un classement imposé. */
   const sortedRows = useMemo(() => {
@@ -263,7 +273,7 @@ export function DashboardPage() {
       zones: sum('zones'),
       zonesEnAttente: sum('zonesEnAttente'),
       anomalies: sum('anomalies'),
-      admins: regions.length,
+      admins: regions.reduce((a, r) => a + (r.admins ?? 0), 0),
       adminsAction: regions.filter((r) => r.adminAction).length,
       incidents: rows.reduce((a, r) => a + r.incidentsP, 0),
       alertes: rows.reduce((a, r) => a + r.alertesP, 0),
@@ -291,13 +301,13 @@ export function DashboardPage() {
   const chartValues = useMemo(
     () => nationalSeries(metric),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [regions, metric, chartWin],
+    [regions, metric, chartWin, REGION_SERIES],
   )
   const chartLabels = useMemo(() => SERIES_LABELS.slice(chartWin.start, chartWin.end), [chartWin])
 
   const events = useMemo(
     () => SYSTEM_EVENTS.filter((e) => regionFilter === 'toutes' || e.region === regionFilter).slice(0, 4),
-    [regionFilter],
+    [regionFilter, SYSTEM_EVENTS],
   )
 
   const attention = useMemo(() => {
@@ -350,8 +360,7 @@ export function DashboardPage() {
     return items.filter((i) => i.count > 0)
   }, [totals])
 
-  // TODO backend : « Boîtiers nécessitant une attention technique » doit venir de Monitoring IoT
-  // (anomalies réellement remontées) ; ici c'est une donnée de démonstration.
+  // « Attention technique » = boîtiers actifs silencieux (hors ligne), calculé par le backend.
   const systemRows = [
     { icon: 'person', tint: '#2b6cb0', soft: '#e8f0f9', label: 'Administrateurs actifs', value: totals.admins, alert: false },
     { icon: 'memory', tint: '#1f9d55', soft: '#e9f6ee', label: 'Boîtiers affectés', value: totals.affectes, alert: false },
@@ -489,13 +498,14 @@ export function DashboardPage() {
             </label>
             <button
               type="button"
-              onClick={() => setLastRefresh(formatNow())}
+              onClick={() => void recharger()}
               className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl border border-line bg-white px-5 py-3.5 text-[13px] font-bold text-ink shadow-card transition-colors hover:bg-page"
             >
               <span className="ic text-xl text-info-600">refresh</span>
               Actualiser
             </button>
           </div>
+          {erreur && <p className="m-0 text-[11.5px] font-semibold text-danger-600">{erreur}</p>}
           {periode === 'perso' && (
             <div className="flex flex-wrap items-center justify-end gap-2 text-[12px] font-semibold text-body">
               Du

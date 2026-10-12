@@ -15,6 +15,8 @@
  * par l'API réservée au rôle super_admin.
  */
 
+import type { TableauDeBordApi } from '@/lib/api'
+import { REGIONS } from '@/lib/regions'
 import { REGIONS_WITH_INACTIVE_ADMIN } from '@/data/superAdminUsers'
 
 export interface RegionStat {
@@ -36,6 +38,8 @@ export interface RegionStat {
   anomalies: number
   /** Le compte de l'administrateur régional est inactif (dérivé de la page Utilisateurs). */
   adminAction: boolean
+  /** Nombre d'administrateurs régionaux actifs (données réelles). */
+  admins?: number
 }
 
 const RAW_REGION_STATS: Omit<RegionStat, 'adminAction'>[] = [
@@ -70,7 +74,8 @@ export const SERIES_DAYS = 90
 /** Les 30 derniers jours de chaque série totalisent exactement les chiffres de REGION_STATS. */
 export const RECENT_DAYS = 30
 
-const SERIES_END = Date.UTC(2026, 8, 30) // 30/09/2026
+// Les 90 jours se terminent aujourd'hui (UTC, comme le backend : Africa/Dakar = UTC).
+const SERIES_END = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /** Dates ISO (AAAA-MM-JJ) des 90 jours, du plus ancien au plus récent. */
@@ -158,3 +163,73 @@ export const SYSTEM_EVENTS: SystemEvent[] = [
   { id: 'ev8', kind: 'boitier', title: 'Nouveau boîtier enregistré', region: 'louga', place: 'Louga', time: '11:58' },
   { id: 'ev9', kind: 'incident', title: 'Incident détecté', region: 'ziguinchor', place: 'Ziguinchor — Sortie nord', time: '11:30' },
 ]
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /tableau-de-bord/?jours=90)         */
+/* ------------------------------------------------------------------ */
+
+const zeros = () => Array.from({ length: SERIES_DAYS }, () => 0)
+
+/**
+ * Réponse nationale du backend -> les mêmes structures que les données de démonstration
+ * (statistiques et séries par région, activité récente), pour que le tableau de bord les
+ * affiche sans changer d'interface. Sans réponse encore : 14 régions à zéro.
+ */
+export function nationalDepuisApi(api: TableauDeBordApi | null): {
+  regionStats: RegionStat[]
+  regionSeries: Record<string, Record<SeriesKey, number[]>>
+  events: SystemEvent[]
+} {
+  const parRegion = new Map((api?.par_region ?? []).map((r) => [r.region, r]))
+  const regionStats: RegionStat[] = REGIONS.map(({ slug, label }) => {
+    const r = parRegion.get(slug)
+    return {
+      slug,
+      label,
+      boitiers: r?.boitiers ?? 0,
+      affectes: r?.affectes ?? 0,
+      // Un conducteur équipé = un boîtier affecté.
+      conducteurs: r?.affectes ?? 0,
+      incidents: r?.incidents ?? 0,
+      alertes: r?.alertes ?? 0,
+      signalements: r?.signalements ?? 0,
+      signalementsEnAttente: r?.signalements_en_attente ?? 0,
+      zones: r?.zones_reconnues ?? 0,
+      zonesEnAttente: r?.zones_en_attente ?? 0,
+      anomalies: r?.boitiers_hors_ligne ?? 0,
+      adminAction: r ? !r.admin_actif : false,
+      admins: r?.admins_actifs ?? 0,
+    }
+  })
+  // Séries alignées sur SERIES_DATES (90 derniers jours) quel que soit le nombre de jours reçus.
+  const indexDate = new Map(SERIES_DATES.map((date, i) => [date, i]))
+  const dates = (api?.series ?? []).map((j) => j.date)
+  const regionSeries = Object.fromEntries(
+    REGIONS.map(({ slug }) => {
+      const serie = { incidents: zeros(), signalements: zeros(), alertes: zeros() }
+      const recue = api?.series_par_region?.[slug]
+      if (recue) {
+        dates.forEach((date, k) => {
+          const i = indexDate.get(date)
+          if (i === undefined) return
+          serie.incidents[i] = recue.incidents[k] ?? 0
+          serie.alertes[i] = recue.alertes[k] ?? 0
+          serie.signalements[i] = recue.signalements[k] ?? 0
+        })
+      }
+      return [slug, serie]
+    }),
+  )
+  const events: SystemEvent[] = (api?.activite_recente ?? []).map((e, i) => {
+    const t = new Date(e.date)
+    return {
+      id: `act-${i}`,
+      kind: e.type,
+      title: e.titre,
+      region: e.region ?? '',
+      place: REGIONS.find((r) => r.slug === e.region)?.label ?? 'Région non renseignée',
+      time: `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`,
+    }
+  })
+  return { regionStats, regionSeries, events }
+}

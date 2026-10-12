@@ -413,6 +413,66 @@ export async function getIncidentsRecents(): Promise<IncidentApi[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Tableaux de bord (GET /tableau-de-bord/) : chiffres calculés en direct par le backend, selon
+// le rôle (admin régional = sa région ; super admin et ANASER = national + détail par région).
+// ---------------------------------------------------------------------------
+
+export interface SerieJourApi {
+  date: string
+  incidents: number
+  alertes: number
+  signalements: number
+}
+
+export interface RegionTableauApi {
+  region: string
+  libelle: string
+  boitiers: number
+  affectes: number
+  boitiers_hors_ligne: number
+  incidents: number
+  alertes: number
+  signalements: number
+  signalements_en_attente: number
+  zones_reconnues: number
+  zones_en_attente: number
+  admin_actif: boolean
+  admins_actifs: number
+}
+
+export interface ActiviteApi {
+  type: 'incident' | 'signalement' | 'boitier' | 'zone'
+  titre: string
+  niveau: string | null
+  region: string | null
+  date: string
+}
+
+export interface TableauDeBordApi {
+  perimetre: { national: boolean; region: string | null; jours: number }
+  indicateurs: {
+    boitiers: { total: number; actifs: number; en_ligne: number; affectes: number }
+    incidents: { aujourd_hui: number; hier: number; periode: number; critiques: number }
+    alertes: { actives: number; nouvelles: number; periode: number }
+    signalements: { periode: number; en_attente: number }
+    zones: { reconnues: number; en_validation_technique: number; soumises_anaser: number }
+  }
+  series: SerieJourApi[]
+  repartition_incidents: { type: string; libelle: string; nombre: number; pourcentage: number }[]
+  zones_a_valider: { id: number; nom: string; niveau_danger: string; statut_validation: string; region: string | null; nombre_incidents: number; date_creation: string }[]
+  zones_plus_dangereuses: { id: number; nom: string; niveau_danger: string; region: string | null; nombre_incidents: number; nombre_signalements: number; score_danger: number }[]
+  activite_recente: ActiviteApi[]
+  par_region?: RegionTableauApi[]
+  series_par_region?: Record<string, { incidents: number[]; alertes: number[]; signalements: number[] }>
+}
+
+export function getTableauDeBord(jours = 30, region?: string): Promise<TableauDeBordApi> {
+  const params = new URLSearchParams({ jours: String(jours) })
+  if (region) params.set('region', region)
+  return authorizedFetch(`/tableau-de-bord/?${params}`)
+}
+
+// ---------------------------------------------------------------------------
 // Retours officiels ANASER (modèle AlerteAnaser — apps/anaser côté Django).
 // POST réservé au rôle `anaser` côté backend ; les autres méthodes suivent
 // le même schéma REST que le reste de l'API (apps/incidents, apps/zones).
