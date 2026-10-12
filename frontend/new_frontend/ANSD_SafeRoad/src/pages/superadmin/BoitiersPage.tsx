@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { useAuth } from '@/context/AuthContext'
 import { REGION_STATS } from '@/data/superAdminHome'
 import {
   boitierDepuisApi,
@@ -363,6 +364,7 @@ function BoitierForm({
   boitiers,
   conducteurs,
   defaultRegion,
+  regionImposee = false,
   onSubmit,
   onClose,
 }: {
@@ -370,6 +372,8 @@ function BoitierForm({
   boitiers: Boitier[]
   conducteurs: Conducteur[]
   defaultRegion: string
+  /** Admin régional : la région est toujours la sienne (règle du backend). */
+  regionImposee?: boolean
   onSubmit: (v: BoitierFormValues) => void
   onClose: () => void
 }) {
@@ -385,7 +389,7 @@ function BoitierForm({
     () => conducteurs.filter((c) => (c.region === v.region || !c.region) && !taken.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     [conducteurs, v.region, taken],
   )
-  const regionLocked = !!initial?.conducteurId
+  const regionLocked = regionImposee || !!initial?.conducteurId
 
   const validate = () => {
     const next: Partial<Record<keyof BoitierFormValues, string>> = {}
@@ -435,7 +439,7 @@ function BoitierForm({
               ))}
             </select>
             {errors.region && <span className="mt-1 block text-[11px] font-semibold text-danger-600">{errors.region}</span>}
-            {regionLocked && (
+            {regionLocked && !regionImposee && (
               <span className="mt-1 block text-[11px] text-faint">Retirez d'abord l'affectation pour changer la région de ce boîtier.</span>
             )}
           </label>
@@ -552,7 +556,13 @@ interface ConfirmState {
   onConfirm: () => void
 }
 
+/**
+ * Super admin : tous les boîtiers, toutes régions. Admin régional (même page) : ceux de sa
+ * région seulement, filtrés par le backend, sans choix de région.
+ */
 export function BoitiersPage() {
+  const { user } = useAuth()
+  const regionFixe = user?.role === 'sous_admin' ? (user.region ?? '') : null
   const [boitiers, setBoitiers] = useState<Boitier[]>([])
   const [conducteurs, setConducteurs] = useState<Conducteur[]>([])
   const [lastRefresh, setLastRefresh] = useState(() => formatNow())
@@ -571,7 +581,7 @@ export function BoitiersPage() {
     recharger().catch(() => setToast('Serveur injoignable : vérifiez que le backend est lancé.'))
   }, [recharger])
 
-  const [region, setRegion] = useState<'toutes' | string>('toutes')
+  const [region, setRegion] = useState<'toutes' | string>(regionFixe ?? 'toutes')
   const [search, setSearch] = useState('')
   const [affectationF, setAffectationF] = useState<AffectationFilter>('tous')
   const [statusF, setStatusF] = useState<'tous' | BoitierStatus>('tous')
@@ -897,11 +907,14 @@ export function BoitiersPage() {
           <span className="ic flex-none text-[44px] text-navy-900">deployed_code</span>
           <div className="min-w-0">
             <h1 className="text-[clamp(24px,2.8vw,32px)] font-extrabold leading-[1.1] tracking-[-0.026em] text-navy-900">Boîtiers</h1>
-            <p className="mt-1 text-[13.5px] leading-relaxed text-info-600">Gestion et affectation des boîtiers SafeRoad.</p>
+            <p className="mt-1 text-[13.5px] leading-relaxed text-info-600">
+              {regionFixe === null ? 'Gestion et affectation des boîtiers SafeRoad.' : `Boîtiers de la région ${regionName(regionFixe)} : enregistrement, affectation et suivi.`}
+            </p>
           </div>
         </div>
         <div className="ml-auto flex flex-col items-end gap-1.5">
           <div className="flex flex-wrap items-center justify-end gap-3">
+            {regionFixe === null && (
             <label className="flex min-w-[210px] cursor-pointer items-center gap-2.5 rounded-xl border border-line bg-white px-3.5 py-3 shadow-card">
               <span className="ic text-[22px] text-navy-900">place</span>
               <select
@@ -918,6 +931,7 @@ export function BoitiersPage() {
                 ))}
               </select>
             </label>
+            )}
             <button
               type="button"
               onClick={() => setFormMode({ editId: null })}
@@ -969,6 +983,7 @@ export function BoitiersPage() {
                 className="w-full rounded-[9px] border-[1.5px] border-line-field bg-field py-2.5 pl-10 pr-3 text-[12.5px] font-medium text-ink outline-none placeholder:text-faint focus:border-brand-600"
               />
             </label>
+            {regionFixe === null && (
             <label className="block min-w-[140px] flex-[1_1_140px]">
               <span className="mb-1 block text-[11px] font-bold text-ink">Région</span>
               <select value={region} onChange={(e) => setRegion(e.target.value)} className={selectCls}>
@@ -980,6 +995,7 @@ export function BoitiersPage() {
                 ))}
               </select>
             </label>
+            )}
             <label className="block min-w-[120px] flex-[1_1_120px]">
               <span className="mb-1 block text-[11px] font-bold text-ink">Affectation</span>
               <select value={affectationF} onChange={(e) => setAffectationF(e.target.value as AffectationFilter)} className={selectCls}>
@@ -1296,7 +1312,8 @@ export function BoitiersPage() {
           initial={editBoitier}
           boitiers={boitiers}
           conducteurs={conducteurs}
-          defaultRegion={region === 'toutes' ? '' : region}
+          defaultRegion={regionFixe ?? (region === 'toutes' ? '' : region)}
+          regionImposee={regionFixe !== null}
           onSubmit={submitForm}
           onClose={() => setFormMode(null)}
         />

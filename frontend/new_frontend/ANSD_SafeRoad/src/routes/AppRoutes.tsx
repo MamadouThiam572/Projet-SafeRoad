@@ -6,7 +6,6 @@ import { PageStub } from '@/components/layout/PageStub'
 import { SiteLayout } from '@/components/layout/SiteLayout'
 import { SuperAdminLayout } from '@/components/layout/SuperAdminLayout'
 import { AlertesPage as AdminAlertesPage } from '@/pages/admin/AlertesPage'
-import { BoitiersPage as AdminBoitiersPage } from '@/pages/admin/BoitiersPage'
 import { CarteRegionalePage } from '@/pages/admin/CarteRegionalePage'
 import { DashboardPage as AdminDashboardPage } from '@/pages/admin/DashboardPage'
 import { HistoriquePage as AdminHistoriquePage } from '@/pages/admin/HistoriquePage'
@@ -82,7 +81,9 @@ export function AppRoutes() {
           <Route path={PATHS.admin.zones} element={<AdminZonesPage />} />
           <Route path={PATHS.admin.demandes} element={<DemandesPage />} />
           <Route path={PATHS.admin.alertes} element={<AdminAlertesPage />} />
-          <Route path={PATHS.admin.boitiers} element={<AdminBoitiersPage />} />
+          {/* Même page que le super admin, limitée à la région (backend). L'ancienne maquette
+              pages/admin/BoitiersPage.tsx est mise de côté. */}
+          <Route path={PATHS.admin.boitiers} element={<SuperAdminBoitiersPage />} />
           {/* La page Statistiques dédiée a été retirée : ses indicateurs vivent
               maintenant dans une section « Statistiques » sur la page Historique. */}
           <Route path={PATHS.admin.historique} element={<AdminHistoriquePage />} />
