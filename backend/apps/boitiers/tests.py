@@ -487,6 +487,21 @@ class BoitierFiltrageRegionalTests(TestCase):
         self.boitier_thies.refresh_from_db()
         self.assertEqual(self.boitier_thies.statut, 'actif')  # inchangé
 
+    def test_admin_regional_ne_peut_pas_sortir_un_boitier_de_sa_region(self):
+        self.client.force_authenticate(user=self.admin_dakar)
+        reponse = self.client.patch(
+            f'/api/v1/boitiers/{self.boitier_dakar.id}/', {'region': 'thies'}, format='json',
+        )
+        self.assertEqual(reponse.status_code, 400)
+        self.boitier_dakar.refresh_from_db()
+        self.assertEqual(self.boitier_dakar.region, 'dakar')
+        # Le reste de la fiche reste modifiable par l'administrateur de la région.
+        reponse = self.client.patch(
+            f'/api/v1/boitiers/{self.boitier_dakar.id}/', {'region': 'dakar', 'numero_immatriculation': 'DK-0002'},
+            format='json',
+        )
+        self.assertEqual(reponse.status_code, 200)
+
     # --- E. DELETE sur un boîtier d'une autre région ---
 
     def test_admin_regional_ne_peut_pas_supprimer_un_boitier_d_une_autre_region(self):

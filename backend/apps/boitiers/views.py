@@ -191,6 +191,14 @@ class BoitierViewSet(viewsets.ModelViewSet):
         data['api_key'] = api_key_en_clair
         return Response(data, status=201)
 
+    def perform_update(self, serializer):
+        # Même règle qu'à la création : un administrateur régional ne peut pas faire sortir un
+        # boîtier de sa région (il en perdrait la vue, et une autre région en hériterait).
+        nouvelle_region = serializer.validated_data.get('region', serializer.instance.region)
+        if getattr(self.request.user, 'role', None) == 'admin' and nouvelle_region != self.request.user.region:
+            raise ValidationError({'region': "Seul le super administrateur peut changer la région d'un boîtier."})
+        serializer.save()
+
     @action(detail=True, methods=['post'])
     def affecter(self, request, pk=None):
         """Rattache le boîtier à un conducteur (boîtier installé sur son véhicule). Si le
