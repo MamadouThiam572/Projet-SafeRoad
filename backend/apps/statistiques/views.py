@@ -172,13 +172,15 @@ class TableauDeBordView(APIView):
         a_valider = [Zone.StatutValidation.SOUMISE_ANASER] if utilisateur.role == 'anaser' else _ZONES_A_TRAITER_TECHNIQUE
         zones_a_valider = [
             {'id': z.id, 'nom': str(z), 'niveau_danger': z.niveau_danger, 'statut_validation': z.statut_validation,
-             'region': z.region, 'nombre_incidents': z.nombre_incidents, 'date_creation': z.date_creation}
+             'region': z.region, 'nombre_incidents': z.nombre_incidents, 'date_creation': z.date_creation,
+             'latitude': z.latitude_centre, 'longitude': z.longitude_centre}
             for z in zones.filter(statut_validation__in=a_valider).order_by('-score_danger')[:10]
         ]
         zones_plus_dangereuses = [
             {'id': z.id, 'nom': str(z), 'niveau_danger': z.niveau_danger, 'region': z.region,
              'nombre_incidents': z.nombre_incidents, 'nombre_signalements': z.nombre_signalements,
-             'score_danger': z.score_danger}
+             'score_danger': z.score_danger, 'latitude': z.latitude_centre, 'longitude': z.longitude_centre,
+             'date_maj': z.date_maj}
             for z in zones.filter(statut_validation=Zone.StatutValidation.RECONNUE).order_by('-score_danger')[:5]
         ]
 
