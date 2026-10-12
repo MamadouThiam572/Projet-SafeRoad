@@ -14,10 +14,22 @@ from apps.comptes.models import Administrateur
 
 COMPTES = [
     {
+        # Super administrateur : vue nationale (supervision des boîtiers, incidents, comptes).
+        'email': 'superadmin@saferoad.sn',
+        'nom': 'Super',
+        'prenom': 'Admin',
+        'role': Administrateur.Role.SUPER_ADMIN,
+        'region': None,
+        'is_staff': True,
+        'is_superuser': True,
+    },
+    {
+        # Administrateur régional : sans région il ne verrait rien (filtrage régional).
         'email': 'admin@saferoad.sn',
         'nom': 'Admin',
         'prenom': 'SafeRoad',
         'role': Administrateur.Role.ADMIN,
+        'region': 'dakar',
         'is_staff': True,
         'is_superuser': True,
     },
@@ -34,7 +46,7 @@ COMPTES = [
 
 class Command(BaseCommand):
     help = (
-        "Crée (ou met à jour) les comptes de démonstration admin/ANASER de façon "
+        "Crée (ou met à jour) les comptes de démonstration super admin/admin/ANASER de façon "
         "idempotente. Mot de passe via DJANGO_DEMO_PASSWORD, sinon valeur par défaut."
     )
 

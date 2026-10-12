@@ -28,7 +28,8 @@ python manage.py creer_comptes_demo --reinitialiser-mdp # force aussi le mot de 
 
 | Rôle          | Email                     |
 | ------------- | ------------------------- |
-| Administrateur | `admin@saferoad.sn`       |
+| Super administrateur | `superadmin@saferoad.sn` |
+| Administrateur régional (Dakar) | `admin@saferoad.sn` |
 | Agent ANASER   | `anaser.test@saferoad.sn` |
 
 Le mot de passe est fourni via `DJANGO_DEMO_PASSWORD` (voir `.env.example`), sinon généré
