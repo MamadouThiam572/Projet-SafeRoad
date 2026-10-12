@@ -1,15 +1,27 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
-import { useAuth } from '@/context/AuthContext'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
 import { REGION_STATS } from '@/data/superAdminHome'
 import {
-  INITIAL_BOITIERS,
-  INITIAL_CONDUCTEURS,
+  boitierDepuisApi,
+  conducteurDepuisApi,
   formatDay,
+  historiqueDepuisApi,
+  idAffichage,
   type Boitier,
   type BoitierStatus,
   type Conducteur,
   type HistoryEntry,
 } from '@/data/superAdminBoitiers'
+import {
+  ApiError,
+  affecterBoitier,
+  creerBoitier,
+  desaffecterBoitier,
+  getBoitiers,
+  getConducteurs,
+  getHistoriqueBoitier,
+  modifierBoitier,
+  regenererCleBoitier,
+} from '@/lib/api'
 
 /**
  * Super Admin → Boîtiers : gestion ADMINISTRATIVE des boîtiers (enregistrement,
@@ -18,7 +30,8 @@ import {
  * Volontairement absent : connexion, dernière communication, réseau, anomalies…
  * Ces données techniques appartiennent à la page « Monitoring IoT ».
  *
- * Données de démonstration : chaque mutation locale est marquée // TODO backend.
+ * Données réelles du backend (GET /boitiers/, /conducteurs/) ; chaque action appelle l'API puis
+ * recharge la liste. La clé API n'est visible qu'une fois, juste après création ou réinitialisation.
  */
 
 const PAGE_SIZE = 10
@@ -30,12 +43,6 @@ const fmt = (n: number) => nf.format(n).replace(/\s/g, ' ')
 
 const regionName = (slug: string) => REGION_STATS.find((r) => r.slug === slug)?.label ?? slug
 
-const todayIso = () => {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
 function formatNow(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
@@ -43,14 +50,6 @@ function formatNow(): string {
 }
 
 /** Valeurs aléatoires réelles à l'exécution (les données de démo, elles, sont déterministes). */
-function randomHex(bytes: number): string {
-  const arr = new Uint8Array(bytes)
-  crypto.getRandomValues(arr)
-  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-const newUuid = () => crypto.randomUUID()
-const newApiKey = () => `srk_${randomHex(16)}`
-
 const maskedKey = '••••••••••••••'
 
 async function copyText(text: string): Promise<boolean> {
@@ -232,16 +231,20 @@ function DetailPanel({ boitier: b, conducteur, onBack, onEdit, onAssign, onUnass
         <dl className="m-0">
           <DetailRow label="Clé API">
             <span className="flex items-center gap-1.5">
-              <span className="min-w-0 break-all font-mono text-[11px]">{showKey ? b.apiKey : maskedKey}</span>
-              <button
+              {!b.apiKey ? (
+                <span className="text-[11px] text-faint">Stockée chiffrée : réinitialisez-la pour en obtenir une nouvelle.</span>
+              ) : (
+                <span className="min-w-0 break-all font-mono text-[11px]">{showKey ? b.apiKey : maskedKey}</span>
+              )}
+              {b.apiKey && <button
                 type="button"
                 onClick={() => setShowKey((v) => !v)}
                 className="ic flex-none text-lg text-faint hover:text-ink"
                 aria-label={showKey ? 'Masquer la clé API' : 'Afficher la clé API'}
               >
                 {showKey ? 'visibility_off' : 'visibility'}
-              </button>
-              {showKey && (
+              </button>}
+              {b.apiKey && showKey && (
                 <button
                   type="button"
                   onClick={() => onCopy('Clé API', b.apiKey)}
@@ -359,7 +362,6 @@ function BoitierForm({
   initial,
   boitiers,
   conducteurs,
-  defaultId,
   defaultRegion,
   onSubmit,
   onClose,
@@ -367,13 +369,12 @@ function BoitierForm({
   initial: Boitier | null
   boitiers: Boitier[]
   conducteurs: Conducteur[]
-  defaultId: string
   defaultRegion: string
   onSubmit: (v: BoitierFormValues) => void
   onClose: () => void
 }) {
   const [v, setV] = useState<BoitierFormValues>({
-    id: initial?.id ?? defaultId,
+    id: initial?.immatriculation ?? '',
     region: initial?.region ?? defaultRegion,
     conducteurId: '',
   })
@@ -381,16 +382,13 @@ function BoitierForm({
 
   const taken = useMemo(() => new Set(boitiers.map((b) => b.conducteurId).filter(Boolean) as string[]), [boitiers])
   const available = useMemo(
-    () => conducteurs.filter((c) => c.region === v.region && !taken.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    () => conducteurs.filter((c) => (c.region === v.region || !c.region) && !taken.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     [conducteurs, v.region, taken],
   )
   const regionLocked = !!initial?.conducteurId
 
   const validate = () => {
     const next: Partial<Record<keyof BoitierFormValues, string>> = {}
-    const id = v.id.trim()
-    if (!id) next.id = "L'identifiant est obligatoire."
-    else if (boitiers.some((b) => b.id.toLowerCase() === id.toLowerCase() && b.id !== initial?.id)) next.id = 'Cet identifiant existe déjà.'
     if (!v.region) next.region = 'Choisissez une région.'
     setErrors(next)
     return Object.keys(next).length === 0
@@ -406,7 +404,7 @@ function BoitierForm({
       <form onSubmit={submit} noValidate>
         <div className="flex flex-col gap-3.5">
           <label className="block">
-            <span className={labelCls}>Identifiant *</span>
+            <span className={labelCls}>Immatriculation du véhicule</span>
             <input
               className={fieldCls}
               value={v.id}
@@ -414,7 +412,7 @@ function BoitierForm({
                 setV((p) => ({ ...p, id: e.target.value }))
                 setErrors((p) => ({ ...p, id: undefined }))
               }}
-              placeholder="Ex : SR-BOX-157"
+              placeholder="Ex : DK-1234-AB"
             />
             {errors.id && <span className="mt-1 block text-[11px] font-semibold text-danger-600">{errors.id}</span>}
           </label>
@@ -492,7 +490,7 @@ function AssignForm({
     [boitiers, boitier.id],
   )
   const options = useMemo(
-    () => conducteurs.filter((c) => c.region === boitier.region && !takenByOthers.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    () => conducteurs.filter((c) => (c.region === boitier.region || !c.region) && !takenByOthers.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     [conducteurs, boitier.region, takenByOthers],
   )
   const [choice, setChoice] = useState(boitier.conducteurId ?? '')
@@ -555,10 +553,23 @@ interface ConfirmState {
 }
 
 export function BoitiersPage() {
-  const { user } = useAuth()
-  const [boitiers, setBoitiers] = useState<Boitier[]>(INITIAL_BOITIERS)
-  const conducteurs = INITIAL_CONDUCTEURS
+  const [boitiers, setBoitiers] = useState<Boitier[]>([])
+  const [conducteurs, setConducteurs] = useState<Conducteur[]>([])
   const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Clés API obtenues pendant cette visite (création / réinitialisation), par UUID : jamais relues.
+  const [clesObtenues, setClesObtenues] = useState<Record<string, string>>({})
+  const [historiques, setHistoriques] = useState<Record<string, HistoryEntry[]>>({})
+
+  const recharger = useCallback(async () => {
+    const [bs, cs] = await Promise.all([getBoitiers(), getConducteurs()])
+    setBoitiers(bs.map(boitierDepuisApi))
+    setConducteurs(cs.map(conducteurDepuisApi))
+    setLastRefresh(formatNow())
+  }, [])
+
+  useEffect(() => {
+    recharger().catch(() => setToast('Serveur injoignable : vérifiez que le backend est lancé.'))
+  }, [recharger])
 
   const [region, setRegion] = useState<'toutes' | string>('toutes')
   const [search, setSearch] = useState('')
@@ -569,7 +580,7 @@ export function BoitiersPage() {
   const [page, setPage] = useState(1)
 
   const [checked, setChecked] = useState<Set<string>>(new Set())
-  const [selectedId, setSelectedId] = useState<string | null>(INITIAL_BOITIERS[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [menu, setMenu] = useState<RowMenu | null>(null)
   const [formMode, setFormMode] = useState<{ editId: string | null } | null>(null)
@@ -578,8 +589,6 @@ export function BoitiersPage() {
   const [toast, setToast] = useState<string | null>(null)
   const headCheckRef = useRef<HTMLInputElement | null>(null)
   const pendingPage = useRef<number | null>(null)
-
-  const actor = user ? `Super Admin : ${user.firstName[0] ?? ''}. ${user.lastName}` : 'Super Admin'
 
   const driverById = useMemo(() => new Map(conducteurs.map((c) => [c.id, c])), [conducteurs])
   const driverOf = (b: Boitier) => (b.conducteurId ? (driverById.get(b.conducteurId) ?? null) : null)
@@ -639,15 +648,20 @@ export function BoitiersPage() {
 
   const allOnPage = pageRows.length > 0 && pageRows.every((b) => checked.has(b.id))
   const someOnPage = pageRows.some((b) => checked.has(b.id))
-  const selected = selectedId ? (boitiers.find((b) => b.id === selectedId) ?? null) : null
+  const brut = selectedId ? (boitiers.find((b) => b.id === selectedId) ?? null) : null
+  const selected = brut ? { ...brut, apiKey: clesObtenues[brut.uuid] ?? '', history: historiques[brut.uuid] ?? [] } : null
   const menuBoitier = menu ? (boitiers.find((b) => b.id === menu.id) ?? null) : null
   const editBoitier = formMode?.editId ? (boitiers.find((b) => b.id === formMode.editId) ?? null) : null
   const assignBoitier = assignId ? (boitiers.find((b) => b.id === assignId) ?? null) : null
 
-  const nextId = useMemo(() => {
-    const max = boitiers.reduce((m, b) => Math.max(m, parseInt(b.id.replace(/\D/g, ''), 10) || 0), 0)
-    return `SR-BOX-${String(max + 1).padStart(3, '0')}`
-  }, [boitiers])
+  // Historique du boîtier ouvert, relu à chaque changement de sélection ou de données.
+  const uuidSelectionne = brut?.uuid
+  useEffect(() => {
+    if (!uuidSelectionne) return
+    getHistoriqueBoitier(uuidSelectionne)
+      .then((h) => setHistoriques((prev) => ({ ...prev, [uuidSelectionne]: h.map(historiqueDepuisApi) })))
+      .catch(() => {})
+  }, [uuidSelectionne, boitiers])
 
   /* --- Effets ----------------------------------------------------------- */
 
@@ -699,15 +713,16 @@ export function BoitiersPage() {
 
   /* --- Mutations locales ------------------------------------------------ */
 
-  const patch = (id: string, fn: (b: Boitier) => Boitier) => setBoitiers((prev) => prev.map((b) => (b.id === id ? fn(b) : b)))
-
-  const entry = (kind: HistoryEntry['kind'], label: string): HistoryEntry => ({
-    id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    kind,
-    date: todayIso(),
-    label,
-    actor,
-  })
+  /** Appelle l'API, recharge la liste, affiche le résultat (ou l'erreur du backend). */
+  const action = async (appel: () => Promise<unknown>, succes: string) => {
+    try {
+      await appel()
+      await recharger()
+      setToast(succes)
+    } catch (err) {
+      setToast(err instanceof ApiError ? err.message : 'Action impossible : serveur injoignable.')
+    }
+  }
 
   const resetFilters = () => {
     setRegion('toutes')
@@ -736,9 +751,9 @@ export function BoitiersPage() {
     setToast((await copyText(value)) ? `${label} copié.` : "Impossible de copier : le navigateur a refusé l'accès au presse-papiers.")
   }
 
-  const applyStatus = (ids: string[], status: BoitierStatus) => {
-    // TODO backend : PATCH du statut administratif de chaque boîtier
-    setBoitiers((prev) => prev.map((b) => (ids.includes(b.id) ? { ...b, status } : b)))
+  const applyStatus = (ids: string[], status: BoitierStatus, succes: string) => {
+    const cibles = boitiers.filter((b) => ids.includes(b.id))
+    void action(() => Promise.all(cibles.map((b) => modifierBoitier(b.uuid, { statut: status }))), succes)
   }
 
   const toggleStatus = (b: Boitier) => {
@@ -749,14 +764,10 @@ export function BoitiersPage() {
         text: `${b.id} ne sera plus considéré comme actif par la plateforme tant qu'il n'est pas réactivé.${d ? ` Il reste affecté à ${d.name}.` : ''}`,
         cta: 'Désactiver',
         danger: true,
-        onConfirm: () => {
-          applyStatus([b.id], 'inactif')
-          setToast(`${b.id} désactivé.`)
-        },
+        onConfirm: () => applyStatus([b.id], 'inactif', `${b.id} désactivé.`),
       })
     } else {
-      applyStatus([b.id], 'actif')
-      setToast(`${b.id} réactivé.`)
+      applyStatus([b.id], 'actif', `${b.id} réactivé.`)
     }
   }
 
@@ -770,9 +781,9 @@ export function BoitiersPage() {
       applyStatus(
         targets.map((b) => b.id),
         status,
+        `${targets.length} boîtier${targets.length > 1 ? 's' : ''} ${status === 'actif' ? 'réactivé' : 'désactivé'}${targets.length > 1 ? 's' : ''}.`,
       )
       setChecked(new Set())
-      setToast(`${targets.length} boîtier${targets.length > 1 ? 's' : ''} ${status === 'actif' ? 'réactivé' : 'désactivé'}${targets.length > 1 ? 's' : ''}.`)
     }
     if (status === 'inactif') {
       setConfirm({
@@ -793,74 +804,47 @@ export function BoitiersPage() {
       text: `${b.id} ne sera plus rattaché à ${d.name} (${d.plate}). Le conducteur redeviendra disponible pour un autre boîtier.`,
       cta: 'Retirer',
       danger: true,
-      onConfirm: () => {
-        // TODO backend : DELETE de l'affectation conducteur/véhicule
-        patch(b.id, (x) => ({ ...x, conducteurId: null, assignedAt: null, history: [entry('desaffecte', `Désaffecté de ${d.name}`), ...x.history] }))
-        setToast(`${b.id} n'est plus affecté.`)
-      },
+      onConfirm: () => void action(() => desaffecterBoitier(b.uuid), `${b.id} n'est plus affecté.`),
     })
   }
 
   const assign = (b: Boitier, conducteurId: string) => {
     const next = driverById.get(conducteurId)
     if (!next) return
-    const prev = driverOf(b)
-    // TODO backend : POST / PUT de l'affectation boîtier ↔ conducteur (le véhicule suit le conducteur)
-    patch(b.id, (x) => ({
-      ...x,
-      conducteurId,
-      assignedAt: todayIso(),
-      history: [entry('affecte', `Affecté à ${next.name}`), ...(prev ? [entry('desaffecte', `Désaffecté de ${prev.name}`)] : []), ...x.history],
-    }))
     setAssignId(null)
-    setToast(`${b.id} affecté à ${next.name}.`)
+    void action(() => affecterBoitier(b.uuid, conducteurId), `${b.id} affecté à ${next.name}.`)
   }
 
   const resetKey = (b: Boitier) => {
     setConfirm({
       title: 'Réinitialiser la clé API ?',
-      text: `L'ancienne clé de ${b.id} cessera immédiatement de fonctionner : le boîtier devra être reconfiguré avec la nouvelle clé.`,
+      text: `L'ancienne clé de ${b.id} restera valable 24 h, le temps de reconfigurer le boîtier avec la nouvelle.`,
       cta: 'Réinitialiser',
       danger: true,
-      onConfirm: () => {
-        // TODO backend : régénérer la clé côté serveur (elle ne doit jamais être produite côté navigateur)
-        patch(b.id, (x) => ({ ...x, apiKey: newApiKey() }))
-        setToast(`Nouvelle clé API générée pour ${b.id}.`)
-      },
+      onConfirm: () =>
+        void action(async () => {
+          const { api_key } = await regenererCleBoitier(b.uuid)
+          setClesObtenues((prev) => ({ ...prev, [b.uuid]: api_key }))
+        }, `Nouvelle clé API générée pour ${b.id} : copiez-la maintenant, elle ne sera plus affichée.`),
     })
   }
 
   const submitForm = (values: BoitierFormValues) => {
+    const immatriculation = values.id.trim()
     if (editBoitier) {
-      // TODO backend : PATCH des informations administratives du boîtier
-      setBoitiers((prev) => prev.map((b) => (b.id === editBoitier.id ? { ...b, id: values.id, region: values.region } : b)))
-      if (selectedId === editBoitier.id) setSelectedId(values.id)
-      setToast(`${values.id} mis à jour.`)
+      void action(
+        () => modifierBoitier(editBoitier.uuid, { region: values.region, numero_immatriculation: immatriculation }),
+        `${editBoitier.id} mis à jour.`,
+      )
     } else {
-      // TODO backend : POST d'enregistrement (l'UUID et la clé API sont générés par le serveur)
-      const d = values.conducteurId ? driverById.get(values.conducteurId) : undefined
-      const today = todayIso()
-      const created: Boitier = {
-        id: values.id,
-        uuid: newUuid(),
-        apiKey: newApiKey(),
-        region: values.region,
-        status: 'actif',
-        registeredAt: today,
-        conducteurId: d?.id ?? null,
-        assignedAt: d ? today : null,
-        history: [...(d ? [entry('affecte', `Affecté à ${d.name}`)] : []), entry('enregistre', 'Boîtier enregistré')],
-      }
-      setBoitiers((prev) => [...prev, created])
-      setSelectedId(created.id)
-      setDrawerOpen(true)
-      setToast(`${created.id} enregistré.`)
-      // Le nouveau boîtier apparaît en dernière page (tri croissant) : on s'y rend.
-      const lastPage = sortDir === 'asc' ? Math.ceil((boitiers.length + 1) / PAGE_SIZE) : 1
-      if (hasFilters) {
-        pendingPage.current = lastPage
-        resetFilters()
-      } else setPage(lastPage)
+      void action(async () => {
+        const cree = await creerBoitier({ region: values.region, numero_immatriculation: immatriculation })
+        setClesObtenues((prev) => ({ ...prev, [cree.id]: cree.api_key }))
+        if (values.conducteurId) await affecterBoitier(cree.id, values.conducteurId)
+        if (hasFilters) resetFilters()
+        setSelectedId(idAffichage(cree.id))
+        setDrawerOpen(true)
+      }, 'Boîtier enregistré : copiez sa clé API et son UUID maintenant, la clé ne sera plus affichée.')
     }
     setFormMode(null)
   }
@@ -944,11 +928,7 @@ export function BoitiersPage() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                // TODO backend : recharger la liste et les compteurs
-                setLastRefresh(formatNow())
-                setToast('Liste actualisée.')
-              }}
+              onClick={() => void action(() => Promise.resolve(), 'Liste actualisée.')}
               className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl border border-line bg-white px-5 py-3.5 text-[13px] font-bold text-ink shadow-card transition-colors hover:bg-page"
             >
               <span className="ic text-xl text-info-600">refresh</span>
@@ -1316,7 +1296,6 @@ export function BoitiersPage() {
           initial={editBoitier}
           boitiers={boitiers}
           conducteurs={conducteurs}
-          defaultId={nextId}
           defaultRegion={region === 'toutes' ? '' : region}
           onSubmit={submitForm}
           onClose={() => setFormMode(null)}

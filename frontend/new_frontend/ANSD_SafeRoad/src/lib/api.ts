@@ -328,6 +328,64 @@ export function getBoitiers(): Promise<BoitierApi[]> {
   return authorizedFetch<BoitierApi[]>('/boitiers/')
 }
 
+/** Enregistrement : le backend génère l'UUID et la clé API, renvoyée UNE SEULE fois (`api_key`). */
+export function creerBoitier(donnees: { region: string; numero_immatriculation?: string }): Promise<BoitierApi & { api_key: string }> {
+  return authorizedFetch('/boitiers/', { method: 'POST', body: JSON.stringify(donnees) })
+}
+
+export function modifierBoitier(
+  id: string,
+  donnees: Partial<{ region: string; numero_immatriculation: string; statut: BoitierApi['statut'] }>,
+): Promise<BoitierApi> {
+  return authorizedFetch(`/boitiers/${id}/`, { method: 'PATCH', body: JSON.stringify(donnees) })
+}
+
+export function affecterBoitier(id: string, conducteur: string): Promise<BoitierApi> {
+  return authorizedFetch(`/boitiers/${id}/affecter/`, { method: 'POST', body: JSON.stringify({ conducteur }) })
+}
+
+export function desaffecterBoitier(id: string): Promise<BoitierApi> {
+  return authorizedFetch(`/boitiers/${id}/desaffecter/`, { method: 'POST', body: '{}' })
+}
+
+/** Nouvelle clé API (l'ancienne reste valable 24 h, le temps de reconfigurer le boîtier). */
+export function regenererCleBoitier(id: string): Promise<{ id: string; api_key: string; ancienne_cle_valide_jusqu_a: string }> {
+  return authorizedFetch(`/boitiers/${id}/regenerer-cle/`, { method: 'POST', body: '{}' })
+}
+
+export interface HistoriqueBoitierApi {
+  id: number
+  evenement: 'enregistre' | 'affecte' | 'desaffecte'
+  evenement_libelle: string
+  conducteur_nom: string | null
+  acteur_nom: string | null
+  role_acteur: string
+  commentaire: string
+  date: string
+}
+
+export function getHistoriqueBoitier(id: string): Promise<HistoriqueBoitierApi[]> {
+  return authorizedFetch(`/boitiers/${id}/historique/`)
+}
+
+export interface ConducteurApi {
+  id: string
+  email: string
+  nom: string
+  prenom: string
+  telephone: string
+  boitier: string | null
+  numero_immatriculation: string | null
+  /** Région du boîtier porté ; null pour un conducteur sans boîtier. */
+  region: string | null
+  is_active: boolean
+}
+
+/** Comptes conducteurs (admins) : super admin tous, admin régional sa région + les non équipés. */
+export function getConducteurs(): Promise<ConducteurApi[]> {
+  return authorizedFetch('/conducteurs/')
+}
+
 export interface IncidentApi {
   id: number
   boitier: string

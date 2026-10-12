@@ -16,6 +16,7 @@
  * d'activation/désactivation et de réinitialisation de la clé API.
  */
 
+import type { BoitierApi, ConducteurApi, HistoriqueBoitierApi } from '@/lib/api'
 import { REGION_STATS } from '@/data/superAdminHome'
 import { INITIAL_STAFF_USERS } from '@/data/superAdminUsers'
 import { REGION_PLATE_PREFIX } from '@/lib/regions'
@@ -57,6 +58,8 @@ export interface Boitier {
   assignedAt: string | null
   /** Du plus récent au plus ancien. */
   history: HistoryEntry[]
+  /** Immatriculation du véhicule équipé (donnée réelle du backend). */
+  immatriculation?: string
 }
 
 /* ------------------------------------------------------------------ */
@@ -210,3 +213,50 @@ const GENERATED = buildData()
 
 export const INITIAL_BOITIERS: Boitier[] = GENERATED.boitiers
 export const INITIAL_CONDUCTEURS: Conducteur[] = GENERATED.conducteurs
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend                                          */
+/* ------------------------------------------------------------------ */
+
+/** Identifiant lisible d'un boîtier réel : début de son UUID (« SR-3F2A9C1E »). */
+export const idAffichage = (uuid: string) => `SR-${uuid.slice(0, 8).toUpperCase()}`
+
+/**
+ * Boîtier du backend -> ligne de la page. La clé API n'est jamais renvoyée par le backend (elle
+ * est stockée chiffrée) : `apiKey` reste vide, sauf juste après une création ou une réinitialisation.
+ */
+export function boitierDepuisApi(b: BoitierApi): Boitier {
+  return {
+    id: idAffichage(b.id),
+    uuid: b.id,
+    apiKey: '',
+    region: b.region ?? '',
+    status: b.statut === 'actif' ? 'actif' : 'inactif',
+    registeredAt: b.date_creation.slice(0, 10),
+    conducteurId: b.conducteur?.id ?? null,
+    assignedAt: b.date_affectation ? b.date_affectation.slice(0, 10) : null,
+    history: [],
+    immatriculation: b.numero_immatriculation,
+  }
+}
+
+export function conducteurDepuisApi(c: ConducteurApi): Conducteur {
+  return {
+    id: c.id,
+    name: `${c.prenom} ${c.nom}`.trim(),
+    // Un conducteur sans boîtier n'a pas encore de région : il peut être équipé partout.
+    region: c.region ?? '',
+    plate: c.numero_immatriculation ?? 'véhicule non renseigné',
+  }
+}
+
+export function historiqueDepuisApi(h: HistoriqueBoitierApi): HistoryEntry {
+  const qui = h.conducteur_nom ? ` — ${h.conducteur_nom}` : ''
+  return {
+    id: String(h.id),
+    kind: h.evenement,
+    date: h.date.slice(0, 10),
+    label: `${h.evenement_libelle}${qui}${h.commentaire ? ` (${h.commentaire})` : ''}`,
+    actor: h.acteur_nom ?? '—',
+  }
+}
