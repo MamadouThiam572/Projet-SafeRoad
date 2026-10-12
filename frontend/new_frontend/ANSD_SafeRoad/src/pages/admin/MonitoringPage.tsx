@@ -3,7 +3,7 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useAuth } from '@/context/AuthContext'
 import {
-  BOITIERS,
+  boitierAdminDepuisApi,
   CONNEXION_META,
   KPI_TRENDS,
   TECHNIQUE_META,
@@ -11,6 +11,8 @@ import {
   type EtatConnexion,
   type EtatTechnique,
 } from '@/data/adminMonitoring'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getBoitiers } from '@/lib/api'
 import { exportTableToPdf } from '@/lib/exportPdf'
 import { formatCoords, offsetLatLng, regionCenter, regionLabel } from '@/lib/regions'
 
@@ -50,8 +52,8 @@ const RESEAU_ICON: Record<Boitier['reseau'], string> = {
   WiFi: 'wifi',
 }
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
@@ -68,15 +70,17 @@ export function MonitoringPage() {
   const [tri, setTri] = useState<Tri>('recent')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  /* Pas de backend temps réel pour l'instant : le bouton ré-horodate juste localement — voir // TODO backend plus bas. */
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Boîtiers réels de la région (GET /boitiers/, filtrés par le backend), rafraîchis toutes les 5 s.
+  const { donnees, erreur, maj, recharger } = useEnDirect(getBoitiers, 5000)
+  const BOITIERS = useMemo(() => (donnees ?? []).map((b) => boitierAdminDepuisApi(b, center, maj)), [donnees, center, maj])
+  const lastRefresh = formatNow(maj)
   /* Boîtier actuellement ouvert dans le panneau de détail (depuis la liste ou la carte). */
   const [detailBoitier, setDetailBoitier] = useState<Boitier | null>(null)
 
   const listRef = useRef<HTMLDivElement>(null)
   const scrollToList = () => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  const localites = useMemo(() => Array.from(new Set(BOITIERS.map((b) => b.localite))).sort(), [])
+  const localites = useMemo(() => Array.from(new Set(BOITIERS.map((b) => b.localite))).sort(), [BOITIERS])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -92,7 +96,7 @@ export function MonitoringPage() {
         ? (a.derniereCommunicationTs < b.derniereCommunicationTs ? 1 : -1)
         : (a.derniereCommunicationTs > b.derniereCommunicationTs ? 1 : -1),
     )
-  }, [search, localite, connexion, technique, tri])
+  }, [BOITIERS, search, localite, connexion, technique, tri])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -109,7 +113,7 @@ export function MonitoringPage() {
       { key: 'horsligne', icon: 'sensors_off', tint: '#e8940c', soft: '#fdf4e6', value: horsLigne, label: 'Hors ligne', sub: 'Boîtiers sans communication récente', trend: KPI_TRENDS.horsLigne },
       { key: 'anomalie', icon: 'warning', tint: '#dc3a2f', soft: '#fdeeec', value: enAnomalie, label: 'En anomalie', sub: 'Boîtiers signalant un problème technique', trend: KPI_TRENDS.enAnomalie },
     ]
-  }, [])
+  }, [BOITIERS])
 
   /*
    * Alertes de supervision — chacune est directement dérivée de la liste des
@@ -118,10 +122,10 @@ export function MonitoringPage() {
    */
   const alerts = useMemo(() => {
     const sansCommunication = BOITIERS.filter((b) => {
-      const diffMs = Date.now() - new Date(b.derniereCommunicationTs).getTime()
+      const diffMs = maj - new Date(b.derniereCommunicationTs).getTime()
       return b.connexion === 'hors_ligne' && diffMs > 24 * 60 * 60 * 1000
     })
-    const alimentation = BOITIERS.filter((b) => b.batterie < 20)
+    const alimentation = BOITIERS.filter((b) => b.batterie >= 0 && b.batterie < 20)
     const anomalieTech = BOITIERS.filter((b) => b.technique === 'anomalie')
     const maintenance = BOITIERS.filter((b) => b.technique === 'maintenance')
     return [
@@ -193,7 +197,7 @@ export function MonitoringPage() {
         },
       },
     ]
-  }, [])
+  }, [BOITIERS, maj])
 
   const resetFilters = () => {
     setSearch('')
@@ -246,7 +250,7 @@ export function MonitoringPage() {
         connexion: CONNEXION_META[b.connexion].label,
         technique: TECHNIQUE_META[b.technique].label,
         derniereCommunication: b.derniereCommunication,
-        batterie: `${b.batterie}%`,
+        batterie: b.batterie < 0 ? 'Non transmise' : `${b.batterie < 0 ? 'N/T' : `${b.batterie}%`}`,
         reseau: b.reseau,
       })),
       filename: `monitoring-boitiers-${region.toLowerCase()}.pdf`,
@@ -292,7 +296,7 @@ export function MonitoringPage() {
           </span>
           <button
             type="button"
-            onClick={() => setLastRefresh(formatNow())}
+            onClick={() => void recharger()}
             className="flex items-center gap-2 whitespace-nowrap rounded-full border border-line bg-white px-3.5 py-2.5 text-left text-xs font-bold text-ink transition-colors hover:bg-page"
           >
             <span>
@@ -301,6 +305,7 @@ export function MonitoringPage() {
             </span>
             <span className="ic text-base text-brand-600">refresh</span>
           </button>
+          {erreur && <p className="m-0 text-[11px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
 
@@ -625,7 +630,7 @@ export function MonitoringPage() {
                     <td className="px-3 py-3">
                       <span className="flex items-center gap-1 font-semibold" style={{ color: batt.color }}>
                         <span className="ic text-base">{batt.icon}</span>
-                        {b.batterie}%
+                        {b.batterie < 0 ? 'N/T' : `${b.batterie}%`}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-body">
@@ -768,7 +773,7 @@ export function MonitoringPage() {
                       <dt className="font-semibold text-faint">Batterie</dt>
                       <dd className="m-0 mt-0.5 flex items-center gap-1 font-bold" style={{ color: batt.color }}>
                         <span className="ic text-base">{batt.icon}</span>
-                        {b.batterie}%
+                        {b.batterie < 0 ? 'N/T' : `${b.batterie}%`}
                       </dd>
                     </div>
                     <div>

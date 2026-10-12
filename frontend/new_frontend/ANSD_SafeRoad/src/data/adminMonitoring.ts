@@ -1,3 +1,4 @@
+import type { BoitierApi } from '@/lib/api'
 /**
  * Données de la page /admin/monitoring (« Monitoring IoT » de l'administrateur
  * régional). Données de démonstration en attendant l'endpoint réel
@@ -63,4 +64,38 @@ export const KPI_TRENDS = {
   enLigne: [4, 5, 5, 6, 5, 6, 6],
   horsLigne: [2, 1, 2, 1, 3, 2, 2],
   enAnomalie: [1, 1, 2, 1, 1, 2, 2],
+}
+
+/** Date et heure lisibles (JJ/MM/AAAA HH:mm). */
+const dateHeure = (iso: string) => {
+  const t = new Date(iso)
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()} ${p2(t.getHours())}:${p2(t.getMinutes())}`
+}
+
+/**
+ * Boîtier du backend (GET /boitiers/, déjà limité à la région de l'admin) -> ligne de supervision.
+ * `offset` est calculé depuis le centre de la région pour que la carte place la vraie position ;
+ * sans position GPS reçue, le boîtier est au centre de la région. Batterie non transmise = -1.
+ */
+export function boitierAdminDepuisApi(b: BoitierApi, centre: [number, number], maintenant: number): Boitier {
+  const positionRecente =
+    b.derniere_localisation_maj != null && maintenant - Date.parse(b.derniere_localisation_maj) <= 120_000
+  const aPosition = b.derniere_latitude != null && b.derniere_longitude != null
+  return {
+    id: `SR-${b.id.slice(0, 8).toUpperCase()}`,
+    vehicule: b.numero_immatriculation || b.conducteur?.nom || '—',
+    localite: b.region_libelle ?? 'Région non renseignée',
+    lieu: aPosition ? 'Dernière position GPS' : 'En attente du GPS',
+    offset: aPosition ? [b.derniere_latitude! - centre[0], b.derniere_longitude! - centre[1]] : [0, 0],
+    connexion: b.en_ligne ? 'en_ligne' : 'hors_ligne',
+    technique: b.statut === 'maintenance' ? 'maintenance' : b.en_ligne && !positionRecente ? 'anomalie' : 'normal',
+    derniereCommunication: b.derniere_communication ? dateHeure(b.derniere_communication) : 'Jamais',
+    derniereCommunicationTs: b.derniere_communication ?? '1970-01-01T00:00:00Z',
+    derniereDonnee: aPosition
+      ? `Position${b.derniere_vitesse_gps != null ? ` · ${Math.round(b.derniere_vitesse_gps)} km/h` : ''}${b.dernier_nombre_satellites != null ? ` · ${b.dernier_nombre_satellites} satellites` : ''}`
+      : 'Message sans position (GPS sans fix)',
+    batterie: -1,
+    reseau: b.dernier_reseau === 'gsm' ? 'GSM' : 'WiFi',
+  }
 }
