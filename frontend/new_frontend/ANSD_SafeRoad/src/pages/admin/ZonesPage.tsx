@@ -1,27 +1,19 @@
 import { useMemo, useState } from 'react'
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
+import { DecisionZone } from '@/components/zones/DecisionZone'
 import { useAuth } from '@/context/AuthContext'
-import {
-  TAUX_RECURRENCE_7J,
-  ZONES_RISQUE,
-  ZONES_TENDANCES,
-  type PointEvolution,
-  type RiskLevel,
-  type StatutValidation,
-  type ZoneRisque,
-} from '@/data/adminZones'
-import { formatCoords, offsetLatLng, regionCenter, regionLabel } from '@/lib/regions'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getZones, type StatutZone, type ZoneApi } from '@/lib/api'
+import { formatCoords, regionCenter, regionLabel } from '@/lib/regions'
+import { STATUT_ZONE_META, STATUTS_A_VALIDER } from '@/lib/zones'
+
+type RiskLevel = ZoneApi['niveau_danger']
 
 const LEVEL_META: Record<RiskLevel, { label: string; color: string; soft: string; text: string }> = {
   critique: { label: 'Critique', color: '#dc3a2f', soft: '#fdeeec', text: '#dc3a2f' },
   vigilance: { label: 'Vigilance', color: '#e8940c', soft: '#fdf4e6', text: '#e8940c' },
   normale: { label: 'Normal', color: '#1f9d55', soft: '#e9f6ee', text: '#1f9d55' },
-}
-
-const STATUT_META: Record<StatutValidation, { label: string; soft: string; text: string }> = {
-  en_cours: { label: 'En cours', soft: '#fdf4e6', text: '#e8940c' },
-  validee: { label: 'Validée', soft: '#e9f6ee', text: '#1f9d55' },
 }
 
 const TILE_LAYERS = {
@@ -35,73 +27,69 @@ const TILE_LAYERS = {
   },
 }
 
+const NATIONAL_CENTER: [number, number] = [14.45, -14.6]
+
 type Filtre = 'toutes' | RiskLevel
+type FiltreStatut = 'tous' | 'a_valider' | Exclude<StatutZone, 'proposee' | 'en_verification' | 'validee_technique'>
 
-/**
- * Petit graphe d'évolution en SVG — une seule série (nombre d'événements /
- * jour), donc une seule teinte (le bleu déjà utilisé pour « incidents » dans
- * StatsBarChart du dashboard), trait fin arrondi + aire à faible opacité.
- * Pas de survol pour rester cohérent avec les autres graphes déjà en place
- * sur cette app (StatsBarChart, IncidentDonut) qui n'en ont pas non plus.
- */
-function EvolutionChart({ data }: { data: PointEvolution[] }) {
-  const width = 280
-  const height = 96
-  const padY = 10
-  const max = Math.max(...data.map((d) => d.valeur), 1)
+const FILTRES_STATUT: { key: FiltreStatut; label: string }[] = [
+  { key: 'tous', label: 'Tous les statuts' },
+  { key: 'a_valider', label: 'À valider (technique)' },
+  { key: 'soumise_anaser', label: "Soumises à l'ANASER" },
+  { key: 'reconnue', label: "Reconnues par l'ANASER" },
+  { key: 'rejetee', label: 'Rejetées' },
+  { key: 'archivee', label: 'Archivées' },
+]
 
-  const points = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * width
-    const y = height - padY - (d.valeur / max) * (height - padY * 2)
-    return { x, y }
-  })
+const nomZone = (z: ZoneApi) => z.nom || `Zone #${z.id}`
 
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
-  const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Évolution des événements">
-      <path d={areaPath} fill="#2b6cb0" opacity={0.1} />
-      <path d={linePath} fill="none" stroke="#2b6cb0" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((p, i) => (
-        <circle key={data[i].date} cx={p.x} cy={p.y} r={2.5} fill="#2b6cb0" />
-      ))}
-    </svg>
-  )
+const dateHeure = (iso: string) => {
+  const t = new Date(iso)
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()} ${p2(t.getHours())}:${p2(t.getMinutes())}`
 }
 
-export function ZonesPage() {
-  const { user } = useAuth()
-  const region = regionLabel(user?.region)
-  const center = useMemo(() => regionCenter(user?.region), [user?.region])
+const correspond = (z: ZoneApi, f: FiltreStatut) =>
+  f === 'tous' || (f === 'a_valider' ? STATUTS_A_VALIDER.includes(z.statut_validation) : z.statut_validation === f)
 
-  const [zones, setZones] = useState<ZoneRisque[]>(ZONES_RISQUE)
+/**
+ * Zones à risque détectées par le système (regroupement des incidents des boîtiers, renforcé
+ * par les signalements) et leur circuit de validation. Admin régional : sa région (filtrée par
+ * le backend), validation technique. `national` : vue de tout le pays, utilisée par l'ANASER,
+ * qui seule reconnaît officiellement une zone.
+ */
+export function ZonesPage({ national = false }: { national?: boolean }) {
+  const { user } = useAuth()
+  const region = national ? 'Sénégal' : regionLabel(user?.region)
+  const center = useMemo(() => (national ? NATIONAL_CENTER : regionCenter(user?.region)), [national, user?.region])
+
+  const { donnees, erreur, recharger } = useEnDirect(getZones, 30_000)
+  const zones = useMemo(() => donnees ?? [], [donnees])
   const [filtre, setFiltre] = useState<Filtre>('toutes')
-  const [selectedId, setSelectedId] = useState<string>(ZONES_RISQUE[0].id)
+  const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>(national ? 'soumise_anaser' : 'tous')
+  const [choisie, setChoisie] = useState<number | null>(null)
   const [tuiles, setTuiles] = useState<'plan' | 'satellite'>('plan')
 
   const counts = useMemo(
     () => ({
-      critique: zones.filter((z) => z.niveau === 'critique').length,
-      vigilance: zones.filter((z) => z.niveau === 'vigilance').length,
-      normale: zones.filter((z) => z.niveau === 'normale').length,
-      enAttente: zones.filter((z) => z.statut === 'en_cours').length,
+      critique: zones.filter((z) => z.niveau_danger === 'critique').length,
+      vigilance: zones.filter((z) => z.niveau_danger === 'vigilance').length,
+      normale: zones.filter((z) => z.niveau_danger === 'normale').length,
+      aValider: zones.filter((z) => STATUTS_A_VALIDER.includes(z.statut_validation)).length,
+      soumises: zones.filter((z) => z.statut_validation === 'soumise_anaser').length,
+      reconnues: zones.filter((z) => z.statut_validation === 'reconnue').length,
     }),
     [zones],
   )
 
+  const parStatut = useMemo(() => zones.filter((z) => correspond(z, filtreStatut)), [zones, filtreStatut])
   const filtered = useMemo(
-    () => (filtre === 'toutes' ? zones : zones.filter((z) => z.niveau === filtre)),
-    [zones, filtre],
+    () => (filtre === 'toutes' ? parStatut : parStatut.filter((z) => z.niveau_danger === filtre)),
+    [parStatut, filtre],
   )
 
-  const selected = zones.find((z) => z.id === selectedId) ?? zones[0]
-  const selectedLatLng = offsetLatLng(center, selected.offset)
-
-  // TODO backend : PATCH /api/v1/zones/{id}/valider/ (réservé aux rôles admin/super_admin)
-  const handleValider = (id: string) => {
-    setZones((prev) => prev.map((z) => (z.id === id ? { ...z, statut: 'validee' } : z)))
-  }
+  // Par défaut : la première zone de la liste filtrée (la plus dangereuse, tri du backend).
+  const selected = zones.find((z) => z.id === choisie) ?? filtered[0] ?? null
 
   const kpiCards: { key: string; icon: string; soft: string; tint: string; value: string; label: string; trend: string }[] = [
     {
@@ -111,7 +99,7 @@ export function ZonesPage() {
       tint: LEVEL_META.critique.text,
       value: String(counts.critique),
       label: 'Zones critiques',
-      trend: `↑ ${ZONES_TENDANCES.critique} par rapport à la semaine dernière`,
+      trend: 'Tous statuts confondus',
     },
     {
       key: 'vigilance',
@@ -120,7 +108,7 @@ export function ZonesPage() {
       tint: LEVEL_META.vigilance.text,
       value: String(counts.vigilance),
       label: 'Zones de vigilance',
-      trend: `↑ ${ZONES_TENDANCES.vigilance} par rapport à la semaine dernière`,
+      trend: 'Tous statuts confondus',
     },
     {
       key: 'normales',
@@ -129,25 +117,25 @@ export function ZonesPage() {
       tint: LEVEL_META.normale.text,
       value: String(counts.normale),
       label: 'Zones normales',
-      trend: `↓ ${ZONES_TENDANCES.normale} par rapport à la semaine dernière`,
+      trend: 'Tous statuts confondus',
     },
     {
       key: 'attente',
       icon: 'lock_clock',
       soft: '#f1ecfd',
       tint: '#7c3aed',
-      value: String(counts.enAttente),
-      label: 'Zones en attente de validation',
-      trend: 'Aucun changement',
+      value: String(national ? counts.soumises : counts.aValider),
+      label: national ? 'Zones à reconnaître' : 'Zones à valider',
+      trend: national ? 'Validées techniquement par les admins' : `${counts.soumises} soumise${counts.soumises > 1 ? 's' : ''} à l'ANASER`,
     },
     {
-      key: 'recurrence',
-      icon: 'insights',
-      soft: '#f1ecfd',
-      tint: '#7c3aed',
-      value: `${TAUX_RECURRENCE_7J.valeur}%`,
-      label: 'Taux de récurrence (7j)',
-      trend: `↑ ${TAUX_RECURRENCE_7J.tendance} par rapport à la semaine dernière`,
+      key: 'reconnues',
+      icon: 'verified_user',
+      soft: '#e9f6ee',
+      tint: '#1a8248',
+      value: String(counts.reconnues),
+      label: "Reconnues par l'ANASER",
+      trend: 'Publiques et alertent les conducteurs',
     },
   ]
 
@@ -165,14 +153,15 @@ export function ZonesPage() {
             Zones à risque
           </h1>
           <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-body">
-            Suivez et gérez les zones à risque de votre région. Analysez les tendances et validez les zones
-            détectées.
+            {national
+              ? "Zones détectées dans tout le pays. Les zones validées techniquement par les administrateurs vous sont soumises : seule votre reconnaissance les rend officielles, publiques et déclenche les alertes aux conducteurs."
+              : "Zones détectées dans votre région. Vérifiez-les et validez-les techniquement, puis soumettez-les à l'ANASER pour reconnaissance officielle."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-body">
           <span className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-2">
             <span className="ic text-base text-brand-600">place</span>
-            Région <span className="text-ink">{region}</span>
+            {national ? 'Périmètre' : 'Région'} <span className="text-ink">{region}</span>
           </span>
           <span className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-2">
             <span className="ic text-base text-brand-600">update</span>
@@ -180,6 +169,7 @@ export function ZonesPage() {
           </span>
         </div>
       </div>
+      {erreur && <p className="mx-6 mt-2 text-xs font-semibold text-danger-600">{erreur}</p>}
 
       <section className="mx-6 mt-4.5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
         {kpiCards.map((kpi) => (
@@ -221,21 +211,21 @@ export function ZonesPage() {
             </div>
           </div>
           <div className="relative h-[420px] w-full">
-            <MapContainer center={center} zoom={12} className="h-full w-full" scrollWheelZoom={false}>
+            <MapContainer center={center} zoom={national ? 7 : 11} className="h-full w-full" scrollWheelZoom={false}>
               <TileLayer attribution={TILE_LAYERS[tuiles].attribution} url={TILE_LAYERS[tuiles].url} />
-              {zones.map((zone) => {
-                const meta = LEVEL_META[zone.niveau]
+              {filtered.map((zone) => {
+                const meta = LEVEL_META[zone.niveau_danger]
                 return (
                   <CircleMarker
                     key={zone.id}
-                    center={offsetLatLng(center, zone.offset)}
-                    radius={zone.id === selectedId ? 12 : 8 + Math.min(zone.incidents / 3, 8)}
+                    center={[zone.latitude_centre, zone.longitude_centre]}
+                    radius={zone.id === selected?.id ? 12 : 8 + Math.min(zone.nombre_incidents / 3, 8)}
                     pathOptions={{ color: '#fff', weight: 2, fillColor: meta.color, fillOpacity: 0.92 }}
-                    eventHandlers={{ click: () => setSelectedId(zone.id) }}
+                    eventHandlers={{ click: () => setChoisie(zone.id) }}
                   >
                     <Popup>
                       <div className="w-[190px]">
-                        <p className="m-0 text-[13.5px] font-extrabold text-ink">{zone.nom}</p>
+                        <p className="m-0 text-[13.5px] font-extrabold text-ink">{nomZone(zone)}</p>
                         <p
                           className="m-0 mt-1 inline-block rounded-md px-2 py-1 text-[10.5px] font-bold"
                           style={{ background: meta.soft, color: meta.text }}
@@ -243,9 +233,9 @@ export function ZonesPage() {
                           Zone {meta.label.toLowerCase()}
                         </p>
                         <p className="m-0 mt-1.5 text-[11.5px] text-body">
-                          {zone.incidents} incidents · {zone.avgSpeed} km/h (moy.)
+                          {zone.nombre_incidents} incidents · {zone.nombre_signalements} signalements
                         </p>
-                        <p className="m-0 mt-1 text-[11px] text-faint">Dernière détection : {zone.lastDetection}</p>
+                        <p className="m-0 mt-1 text-[11px] text-faint">{STATUT_ZONE_META[zone.statut_validation].label}</p>
                       </div>
                     </Popup>
                   </CircleMarker>
@@ -265,20 +255,28 @@ export function ZonesPage() {
         </div>
 
         <div className="min-w-0 rounded-2xl border border-line bg-white shadow-card">
-          <div className="flex items-center justify-between border-b border-line-soft px-5 py-4">
-            <p className="m-0 text-sm font-extrabold text-ink">Liste des zones à risque — {region}</p>
-            {/* Déjà sur cette page : "Voir toutes" réinitialise simplement le filtre de niveau plutôt que de rediriger vers elle-même. */}
-            <button type="button" onClick={() => setFiltre('toutes')} className="text-xs font-bold text-brand-600">
-              Voir toutes →
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft px-5 py-4">
+            <p className="m-0 text-sm font-extrabold text-ink">Liste des zones — {region}</p>
+            <select
+              value={filtreStatut}
+              onChange={(e) => setFiltreStatut(e.target.value as FiltreStatut)}
+              aria-label="Filtrer par statut"
+              className="rounded-full border border-line bg-white px-3 py-1.5 text-[11px] font-bold text-body"
+            >
+              {FILTRES_STATUT.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="flex gap-1.5 px-5 pt-3.5">
+          <div className="flex flex-wrap gap-1.5 px-5 pt-3.5">
             {(
               [
-                { key: 'toutes', label: `Toutes (${zones.length})` },
-                { key: 'critique', label: `Critiques (${counts.critique})` },
-                { key: 'vigilance', label: `Vigilance (${counts.vigilance})` },
-                { key: 'normale', label: `Normales (${counts.normale})` },
+                { key: 'toutes', label: `Toutes (${parStatut.length})` },
+                { key: 'critique', label: 'Critiques' },
+                { key: 'vigilance', label: 'Vigilance' },
+                { key: 'normale', label: 'Normales' },
               ] as { key: Filtre; label: string }[]
             ).map((tab) => (
               <button
@@ -294,26 +292,31 @@ export function ZonesPage() {
             ))}
           </div>
           <ul className="flex max-h-[300px] flex-col gap-1 overflow-y-auto px-3 py-3.5">
+            {filtered.length === 0 && (
+              <li className="px-2.5 py-2 text-[11.5px] text-faint">
+                {donnees ? 'Aucune zone pour ces filtres.' : 'Chargement des zones…'}
+              </li>
+            )}
             {filtered.map((zone) => {
-              const meta = LEVEL_META[zone.niveau]
+              const meta = LEVEL_META[zone.niveau_danger]
               return (
                 <li key={zone.id}>
                   <button
                     type="button"
-                    onClick={() => setSelectedId(zone.id)}
+                    onClick={() => setChoisie(zone.id)}
                     className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors ${
-                      zone.id === selectedId ? 'bg-page' : 'hover:bg-page'
+                      zone.id === selected?.id ? 'bg-page' : 'hover:bg-page'
                     }`}
                   >
                     <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ background: meta.soft, color: meta.text }}>
                       <span className="ic text-base">
-                        {zone.niveau === 'critique' ? 'error' : zone.niveau === 'vigilance' ? 'warning' : 'location_on'}
+                        {zone.niveau_danger === 'critique' ? 'error' : zone.niveau_danger === 'vigilance' ? 'warning' : 'location_on'}
                       </span>
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="m-0 truncate text-[12.5px] font-bold text-ink">{zone.nom}</p>
+                      <p className="m-0 truncate text-[12.5px] font-bold text-ink">{nomZone(zone)}</p>
                       <p className="m-0 mt-0.5 text-[11px] text-faint">
-                        {zone.localite} · {zone.incidents} incidents · Dernière détection : {zone.lastDetection}
+                        {zone.region_libelle ?? 'Région inconnue'} · {zone.nombre_incidents} incidents · {STATUT_ZONE_META[zone.statut_validation].label}
                       </p>
                     </div>
                     <span className="flex-none rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: meta.soft, color: meta.text }}>
@@ -338,56 +341,46 @@ export function ZonesPage() {
                 <tr className="border-b border-line-soft text-[10.5px] font-bold uppercase tracking-wide text-faint">
                   <th className="px-5 py-3">ID</th>
                   <th className="px-3 py-3">Nom de la zone</th>
-                  <th className="px-3 py-3">Localité</th>
-                  <th className="px-3 py-3">Type</th>
+                  <th className="px-3 py-3">Région</th>
                   <th className="px-3 py-3">Niveau</th>
-                  <th className="px-3 py-3">Incidents (7j)</th>
-                  <th className="px-3 py-3">Dernière détection</th>
+                  <th className="px-3 py-3">Incidents</th>
+                  <th className="px-3 py-3">Signalements</th>
+                  <th className="px-3 py-3">Mise à jour</th>
                   <th className="px-3 py-3">Statut</th>
                   <th className="px-5 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((zone) => {
-                  const meta = LEVEL_META[zone.niveau]
-                  const statutMeta = STATUT_META[zone.statut]
+                  const meta = LEVEL_META[zone.niveau_danger]
+                  const statutMeta = STATUT_ZONE_META[zone.statut_validation]
                   return (
                     <tr key={zone.id} className="border-b border-line-soft last:border-0 hover:bg-page">
-                      <td className="px-5 py-3 font-semibold text-faint">{zone.id}</td>
-                      <td className="px-3 py-3 font-bold text-ink">{zone.nom}</td>
-                      <td className="px-3 py-3 text-body">{zone.localite}</td>
-                      <td className="px-3 py-3 text-body">{zone.type}</td>
+                      <td className="px-5 py-3 font-semibold text-faint">Z-{zone.id}</td>
+                      <td className="px-3 py-3 font-bold text-ink">{nomZone(zone)}</td>
+                      <td className="px-3 py-3 text-body">{zone.region_libelle ?? '—'}</td>
                       <td className="px-3 py-3">
                         <span className="rounded-md px-1.5 py-0.5 text-[10.5px] font-bold" style={{ background: meta.soft, color: meta.text }}>
                           {meta.label}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-body">{zone.incidents}</td>
-                      <td className="px-3 py-3 text-body">{zone.lastDetection}</td>
+                      <td className="px-3 py-3 text-body">{zone.nombre_incidents}</td>
+                      <td className="px-3 py-3 text-body">{zone.nombre_signalements}</td>
+                      <td className="px-3 py-3 text-body">{dateHeure(zone.date_maj)}</td>
                       <td className="px-3 py-3">
-                        {zone.statut === 'en_cours' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleValider(zone.id)}
-                            className="rounded-full bg-brand-600 px-3 py-1.5 text-[10.5px] font-bold text-white hover:bg-brand-700"
-                          >
-                            Valider
-                          </button>
-                        ) : (
-                          <span
-                            className="rounded-md px-1.5 py-0.5 text-[10.5px] font-bold"
-                            style={{ background: statutMeta.soft, color: statutMeta.text }}
-                          >
-                            {statutMeta.label}
-                          </span>
-                        )}
+                        <span
+                          className="whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10.5px] font-bold"
+                          style={{ background: statutMeta.soft, color: statutMeta.text }}
+                        >
+                          {statutMeta.label}
+                        </span>
                       </td>
                       <td className="px-5 py-3">
                         <button
                           type="button"
-                          onClick={() => setSelectedId(zone.id)}
+                          onClick={() => setChoisie(zone.id)}
                           className="ic flex h-7 w-7 items-center justify-center rounded-lg text-base text-faint hover:bg-page hover:text-ink"
-                          aria-label={`Voir ${zone.nom}`}
+                          aria-label={`Voir ${nomZone(zone)}`}
                         >
                           visibility
                         </button>
@@ -406,52 +399,36 @@ export function ZonesPage() {
               <p className="m-0 text-sm font-extrabold text-ink">Zone à risque — Détail</p>
               <span
                 className="rounded-md px-1.5 py-0.5 text-[10.5px] font-bold"
-                style={{ background: LEVEL_META[selected.niveau].soft, color: LEVEL_META[selected.niveau].text }}
+                style={{ background: LEVEL_META[selected.niveau_danger].soft, color: LEVEL_META[selected.niveau_danger].text }}
               >
-                {LEVEL_META[selected.niveau].label}
+                {LEVEL_META[selected.niveau_danger].label}
               </span>
             </div>
 
-            {/* Pas de flux caméra réel branché sur cette page pour l'instant — aperçu
-                générique en attendant que le backend expose les clichés des boîtiers. */}
-            <div className="flex h-[110px] items-center justify-center rounded-xl bg-page text-faint">
-              <span className="ic text-3xl">photo_camera</span>
-            </div>
-
-            <p className="m-0 mt-3.5 text-sm font-extrabold text-ink">{selected.nom}</p>
-            <p className="m-0 mt-1 text-[11.5px] text-faint">{formatCoords(selectedLatLng[0], selectedLatLng[1])}</p>
+            <p className="m-0 text-sm font-extrabold text-ink">{nomZone(selected)}</p>
+            <p className="m-0 mt-1 text-[11.5px] text-faint">
+              {formatCoords(selected.latitude_centre, selected.longitude_centre)} · rayon {Math.round(selected.rayon_metres)} m
+            </p>
             <p className="m-0 mt-1 text-[11.5px] text-body">
-              {selected.incidents} incidents (7 derniers jours) · Dernière détection : {selected.lastDetection}
+              {selected.nombre_incidents} incidents des boîtiers · {selected.nombre_signalements} signalements · score{' '}
+              {selected.score_danger.toFixed(1)}
+            </p>
+            <p className="m-0 mt-1 text-[11px] text-faint">
+              Détectée le {dateHeure(selected.date_creation)} · {selected.region_libelle ?? 'Région inconnue'}
             </p>
 
-            <p className="m-0 mb-2 mt-4 text-xs font-extrabold text-ink">Évolution des événements</p>
-            <EvolutionChart data={selected.evolution} />
-
-            <p className="m-0 mb-2 mt-4 text-xs font-extrabold text-ink">Commentaires récents</p>
-            {selected.commentaires.length === 0 ? (
-              <p className="m-0 text-[11.5px] text-faint">Aucun commentaire pour cette zone.</p>
-            ) : (
-              <ul className="flex flex-col gap-2.5">
-                {selected.commentaires.map((c, i) => (
-                  <li key={i} className="rounded-xl bg-page p-3 text-[11.5px] text-body">
-                    <p className="m-0">{c.texte}</p>
-                    <p className="m-0 mt-1 text-[10.5px] font-semibold text-faint">
-                      {c.auteur} — {c.date}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <button
-              type="button"
-              onClick={() => handleValider(selected.id)}
-              disabled={selected.statut === 'validee'}
-              className="mt-4.5 flex w-full items-center justify-center gap-2 rounded-[11px] bg-brand-600 py-2.5 text-[12.5px] font-bold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="ic text-base">verified</span>
-              {selected.statut === 'validee' ? 'Zone déjà validée' : 'Marquer comme zone à risque'}
-            </button>
+            <div className="mt-4 border-t border-line-soft pt-4">
+              <DecisionZone
+                key={`${selected.id}-${selected.statut_validation}`}
+                zone={selected}
+                role={user?.role}
+                onChange={(z) => {
+                  // Garder la zone ouverte même si son nouveau statut sort du filtre.
+                  setChoisie(z.id)
+                  void recharger()
+                }}
+              />
+            </div>
           </div>
         )}
       </section>

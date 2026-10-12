@@ -90,7 +90,8 @@ export function AppRoutes() {
 
       {/* ANASER — rôle consultatif + retour terrain, portée nationale.
           Lecture seule sur incidents/zones (y compris non validées)/statistiques ;
-          seul pouvoir d'écriture : soumettre un retour officiel (AlerteAnaser). */}
+          pouvoirs d'écriture : reconnaissance officielle des zones (seule à les rendre publiques)
+          et retours officiels (AlerteAnaser). */}
       <Route element={<ProtectedRoute allowedRoles={['anaser']} />}>
         <Route element={<AnaserLayout />}>
           <Route path={PATHS.anaser.root} element={<AnaserDashboardPage />} />
@@ -105,12 +106,7 @@ export function AppRoutes() {
           />
           <Route
             path={PATHS.anaser.zones}
-            element={
-              <PageStub
-                title="Zones à risque"
-                description="Vue nationale, y compris les zones en attente de validation. La validation reste réservée aux administrateurs."
-              />
-            }
+            element={<AdminZonesPage national />}
           />
           <Route
             path={PATHS.anaser.statistiques}

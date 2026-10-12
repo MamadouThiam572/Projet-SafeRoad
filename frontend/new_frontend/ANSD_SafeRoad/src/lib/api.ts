@@ -413,6 +413,69 @@ export async function getIncidentsRecents(): Promise<IncidentApi[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Zones à risque et circuit de validation : proposée -> (vérification) -> validée techniquement
+// (admin) -> soumise à l'ANASER -> reconnue (seule une zone reconnue est publique et déclenche
+// les alertes conducteurs). Le backend refuse toute transition non permise au rôle.
+// ---------------------------------------------------------------------------
+
+export type StatutZone =
+  | 'proposee'
+  | 'en_verification'
+  | 'validee_technique'
+  | 'soumise_anaser'
+  | 'reconnue'
+  | 'rejetee'
+  | 'archivee'
+
+export interface ZoneApi {
+  id: number
+  nom: string
+  region: string | null
+  region_libelle: string | null
+  latitude_centre: number
+  longitude_centre: number
+  rayon_metres: number
+  nombre_incidents: number
+  nombre_signalements: number
+  score_danger: number
+  niveau_danger: 'normale' | 'vigilance' | 'critique'
+  niveau_danger_libelle: string
+  statut_validation: StatutZone
+  statut_validation_libelle: string
+  actif: boolean
+  date_creation: string
+  date_maj: string
+}
+
+export interface HistoriqueZoneApi {
+  id: number
+  statut_precedent: StatutZone
+  statut_precedent_libelle: string
+  statut_nouveau: StatutZone
+  statut_nouveau_libelle: string
+  acteur_nom: string | null
+  role_acteur: string
+  commentaire: string
+  date: string
+}
+
+/** Zones visibles du compte : sa région pour l'admin régional, tout le pays sinon. */
+export function getZones(): Promise<ZoneApi[]> {
+  return authorizedFetch('/zones/')
+}
+
+export function changerStatutZone(id: number, statut: StatutZone, commentaire = ''): Promise<ZoneApi> {
+  return authorizedFetch(`/zones/${id}/statut/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ statut_validation: statut, commentaire }),
+  })
+}
+
+export function getHistoriqueZone(id: number): Promise<HistoriqueZoneApi[]> {
+  return authorizedFetch(`/zones/${id}/historique/`)
+}
+
+// ---------------------------------------------------------------------------
 // Tableaux de bord (GET /tableau-de-bord/) : chiffres calculés en direct par le backend, selon
 // le rôle (admin régional = sa région ; super admin et ANASER = national + détail par région).
 // ---------------------------------------------------------------------------
