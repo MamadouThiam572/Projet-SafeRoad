@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import { DecisionZone } from '@/components/zones/DecisionZone'
 import { useAuth } from '@/context/AuthContext'
 import { useEnDirect } from '@/hooks/useEnDirect'
-import { getZones, type StatutZone, type ZoneApi } from '@/lib/api'
+import { ApiError, genererZones, getZones, type StatutZone, type ZoneApi } from '@/lib/api'
 import { formatCoords, regionCenter, regionLabel } from '@/lib/regions'
 import { STATUT_ZONE_META, STATUTS_A_VALIDER } from '@/lib/zones'
 
@@ -55,8 +55,9 @@ const correspond = (z: ZoneApi, f: FiltreStatut) =>
 /**
  * Zones à risque détectées par le système (regroupement des incidents des boîtiers, renforcé
  * par les signalements) et leur circuit de validation. Admin régional : sa région (filtrée par
- * le backend), validation technique. `national` : vue de tout le pays, utilisée par l'ANASER,
- * qui seule reconnaît officiellement une zone.
+ * le backend), validation technique. `national` : vue de tout le pays, utilisée par l'ANASER
+ * (seule à reconnaître officiellement une zone) et par le super admin (validation technique,
+ * archivage et recalcul des zones).
  */
 export function ZonesPage({ national = false }: { national?: boolean }) {
   const { user } = useAuth()
@@ -66,7 +67,24 @@ export function ZonesPage({ national = false }: { national?: boolean }) {
   const { donnees, erreur, recharger } = useEnDirect(getZones, 30_000)
   const zones = useMemo(() => donnees ?? [], [donnees])
   const [filtre, setFiltre] = useState<Filtre>('toutes')
-  const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>(national ? 'soumise_anaser' : 'tous')
+  const estAnaser = user?.role === 'anaser'
+  const estSuperAdmin = user?.role === 'super_admin'
+  const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>(estAnaser ? 'soumise_anaser' : 'tous')
+  const [recalcul, setRecalcul] = useState<{ enCours: boolean; message: string }>({ enCours: false, message: '' })
+
+  async function recalculer() {
+    setRecalcul({ enCours: true, message: '' })
+    try {
+      const r = await genererZones()
+      setRecalcul({
+        enCours: false,
+        message: `${r.incidents_traites} incidents analysés : ${r.zones_creees} zone(s) créée(s), ${r.zones_mises_a_jour} mise(s) à jour.`,
+      })
+      void recharger()
+    } catch (err) {
+      setRecalcul({ enCours: false, message: err instanceof ApiError ? err.message : 'Recalcul impossible : serveur injoignable.' })
+    }
+  }
   const [choisie, setChoisie] = useState<number | null>(null)
   const [tuiles, setTuiles] = useState<'plan' | 'satellite'>('plan')
 
@@ -124,9 +142,9 @@ export function ZonesPage({ national = false }: { national?: boolean }) {
       icon: 'lock_clock',
       soft: '#f1ecfd',
       tint: '#7c3aed',
-      value: String(national ? counts.soumises : counts.aValider),
-      label: national ? 'Zones à reconnaître' : 'Zones à valider',
-      trend: national ? 'Validées techniquement par les admins' : `${counts.soumises} soumise${counts.soumises > 1 ? 's' : ''} à l'ANASER`,
+      value: String(estAnaser ? counts.soumises : counts.aValider),
+      label: estAnaser ? 'Zones à reconnaître' : 'Zones à valider',
+      trend: estAnaser ? 'Validées techniquement par les admins' : `${counts.soumises} soumise${counts.soumises > 1 ? 's' : ''} à l'ANASER`,
     },
     {
       key: 'reconnues',
@@ -153,7 +171,9 @@ export function ZonesPage({ national = false }: { national?: boolean }) {
             Zones à risque
           </h1>
           <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-body">
-            {national
+            {estSuperAdmin
+              ? "Zones détectées dans tout le pays à partir des incidents des boîtiers. Validez-les techniquement et soumettez-les à l'ANASER, seule habilitée à les reconnaître officiellement."
+              : national
               ? "Zones détectées dans tout le pays. Les zones validées techniquement par les administrateurs vous sont soumises : seule votre reconnaissance les rend officielles, publiques et déclenche les alertes aux conducteurs."
               : "Zones détectées dans votre région. Vérifiez-les et validez-les techniquement, puis soumettez-les à l'ANASER pour reconnaissance officielle."}
           </p>
@@ -167,9 +187,21 @@ export function ZonesPage({ national = false }: { national?: boolean }) {
             <span className="ic text-base text-brand-600">update</span>
             Zones connues : <span className="text-ink">{zones.length}</span>
           </span>
+          {estSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => void recalculer()}
+              disabled={recalcul.enCours}
+              className="flex items-center gap-1.5 rounded-full bg-brand-600 px-3.5 py-2 font-bold text-white hover:bg-brand-700 disabled:opacity-60"
+            >
+              <span className="ic text-base">refresh</span>
+              {recalcul.enCours ? 'Recalcul…' : 'Recalculer les zones'}
+            </button>
+          )}
         </div>
       </div>
       {erreur && <p className="mx-6 mt-2 text-xs font-semibold text-danger-600">{erreur}</p>}
+      {recalcul.message && <p className="mx-6 mt-2 text-xs font-semibold text-body">{recalcul.message}</p>}
 
       <section className="mx-6 mt-4.5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
         {kpiCards.map((kpi) => (

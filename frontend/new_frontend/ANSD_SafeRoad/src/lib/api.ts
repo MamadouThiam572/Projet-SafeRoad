@@ -471,6 +471,11 @@ export function changerStatutZone(id: number, statut: StatutZone, commentaire = 
   })
 }
 
+/** Recalcule les zones depuis les incidents des boîtiers (super admin) ; ne touche pas aux statuts. */
+export function genererZones(): Promise<{ zones_creees: number; zones_mises_a_jour: number; incidents_traites: number }> {
+  return authorizedFetch('/zones/generer/', { method: 'POST' })
+}
+
 export function getHistoriqueZone(id: number): Promise<HistoriqueZoneApi[]> {
   return authorizedFetch(`/zones/${id}/historique/`)
 }

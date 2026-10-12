@@ -14,7 +14,6 @@ import { IncidentsPage as AdminIncidentsPage } from '@/pages/admin/IncidentsPage
 import { MonitoringPage as AdminMonitoringPage } from '@/pages/admin/MonitoringPage'
 import { SignalementsPage as AdminSignalementsPage } from '@/pages/admin/SignalementsPage'
 import { SignalementsPage as SuperAdminSignalementsPage } from '@/pages/superadmin/SignalementsPage'
-import { ZonesPage as SuperAdminZonesPage } from '@/pages/superadmin/ZonesPage'
 import { ZonesPage as AdminZonesPage } from '@/pages/admin/ZonesPage'
 import { DashboardPage as AnaserDashboardPage } from '@/pages/anaser/DashboardPage'
 import { ProfilPage as AnaserProfilPage } from '@/pages/anaser/ProfilPage'
@@ -126,7 +125,9 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.monitoring} element={<SuperAdminMonitoringPage />} />
           <Route path={PATHS.superAdmin.incidents} element={<SuperAdminIncidentsPage />} />
           <Route path={PATHS.superAdmin.signalements} element={<SuperAdminSignalementsPage />} />
-          <Route path={PATHS.superAdmin.zones} element={<SuperAdminZonesPage />} />
+          {/* Vue réelle commune (validation, archivage, recalcul). La page détaillée pages/superadmin/ZonesPage.tsx
+              est mise de côté jusqu'à ce que le backend expose les incidents et signalements d'une zone. */}
+          <Route path={PATHS.superAdmin.zones} element={<AdminZonesPage national />} />
           <Route path={PATHS.superAdmin.statistiques} element={<PageStub title="Statistiques" />} />
           <Route path={PATHS.superAdmin.notifications} element={<PageStub title="Notifications" />} />
           <Route path={PATHS.superAdmin.rapports} element={<PageStub title="Rapports" />} />
