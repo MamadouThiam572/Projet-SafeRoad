@@ -2,18 +2,23 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { ACTION_PREVUE_LABEL, ANASER_RETOURS, STATUT_RETOUR_META } from '@/data/anaserRetours'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getTableauDeBord, type TableauDeBordApi } from '@/lib/api'
 import { PATHS } from '@/routes/paths'
 
-/**
- * Chiffres de démonstration, dans le même esprit que data/adminHome.ts
- * (mock en attendant le branchement sur les endpoints Django
- * /api/v1/incidents/, /api/v1/zones/ et /api/v1/statistiques/).
- */
-const NATIONAL_KPIS = [
-  { key: 'incidents', icon: 'report', label: 'Incidents signalés', value: 28, tint: '#dc3a2f', soft: '#fdeeec' },
-  { key: 'zones', icon: 'crisis_alert', label: 'Zones à risque', value: 15, tint: '#e8940c', soft: '#fdf4e6' },
-  { key: 'retours', icon: 'campaign', label: 'Retours ANASER', value: ANASER_RETOURS.length, tint: '#2b6cb0', soft: '#e8f1fb' },
-]
+/** Chiffres nationaux des 30 derniers jours (GET /tableau-de-bord/, vue nationale pour l'ANASER). */
+const chargerNational = () => getTableauDeBord(30)
+
+function indicateursNationaux(api: TableauDeBordApi | null) {
+  const ind = api?.indicateurs
+  return [
+    { key: 'incidents', icon: 'report', label: 'Incidents (30 jours)', value: ind?.incidents.periode ?? 0, tint: '#dc3a2f', soft: '#fdeeec' },
+    { key: 'a-reconnaitre', icon: 'pending_actions', label: 'Zones à reconnaître', value: ind?.zones.soumises_anaser ?? 0, tint: '#7c3aed', soft: '#f1eafe' },
+    { key: 'zones', icon: 'crisis_alert', label: 'Zones reconnues', value: ind?.zones.reconnues ?? 0, tint: '#e8940c', soft: '#fdf4e6' },
+    // Les retours restent locaux tant que la page Retours n'est pas reliée au backend.
+    { key: 'retours', icon: 'campaign', label: 'Retours ANASER', value: ANASER_RETOURS.length, tint: '#2b6cb0', soft: '#e8f1fb' },
+  ]
+}
 
 const QUICK_ACTIONS = [
   { icon: 'report', label: 'Consulter les incidents', to: PATHS.anaser.incidents },
@@ -30,6 +35,8 @@ export function DashboardPage() {
   const { user } = useAuth()
 
   const recentRetours = useMemo(() => ANASER_RETOURS.slice(0, 3), [])
+  const { donnees, erreur } = useEnDirect(chargerNational, 30_000)
+  const NATIONAL_KPIS = useMemo(() => indicateursNationaux(donnees), [donnees])
 
   return (
     <div>
@@ -51,7 +58,9 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {erreur && <p className="mx-6 mt-3 text-xs font-semibold text-danger-600">{erreur}</p>}
+
+      <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {NATIONAL_KPIS.map((kpi) => (
           <div key={kpi.key} className="min-w-0 rounded-2xl border border-line bg-white p-4.5 shadow-card">
             <div className="flex items-center gap-3.5">
