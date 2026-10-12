@@ -150,7 +150,7 @@ class TableauDeBordTests(TestCase):
         for gravite in ('critique', 'faible'):
             Incident.objects.create(
                 boitier=cls.boitier_dakar, latitude=14.69, longitude=-17.44, horodatage=maintenant,
-                type_incident='choc_violent', niveau_gravite=gravite,
+                type_incident='secousse_dangereuse', niveau_gravite=gravite,
             )
         Incident.objects.create(
             boitier=cls.boitier_thies, latitude=14.79, longitude=-16.93, horodatage=maintenant - timedelta(days=1),
@@ -214,8 +214,8 @@ class TableauDeBordTests(TestCase):
         self.assertEqual(d['series'][-1]['incidents'], 2)
         self.assertEqual(sum(j['incidents'] for j in d['series']), 3)
         repartition = {r['type']: r for r in d['repartition_incidents']}
-        self.assertEqual(repartition['choc_violent']['nombre'], 2)
-        self.assertAlmostEqual(repartition['choc_violent']['pourcentage'], 66.7)
+        self.assertEqual(repartition['secousse_dangereuse']['nombre'], 2)
+        self.assertAlmostEqual(repartition['secousse_dangereuse']['pourcentage'], 66.7)
 
     def test_activite_recente_triee(self):
         dates = [e['date'] for e in self.donnees(self.super_admin)['activite_recente']]
@@ -247,7 +247,7 @@ class GenererStatistiquesTests(TestCase):
         for statut in ('nouveau', 'valide', 'rejete'):
             Incident.objects.create(
                 boitier=boitier, latitude=14.69, longitude=-17.44, horodatage=moment_hier,
-                type_incident='choc_violent', niveau_gravite='critique', statut=statut,
+                type_incident='secousse_dangereuse', niveau_gravite='critique', statut=statut,
             )
         signalement = Signalement.objects.create(type_danger='obstacle', latitude=14.69, longitude=-17.44, region='dakar')
         Signalement.objects.filter(pk=signalement.pk).update(date_creation=moment_hier)

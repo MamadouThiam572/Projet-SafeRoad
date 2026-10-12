@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from apps.incidents.models import Incident
 
 from .models import Alerte
-from .utils import prevenir_choc_critique, zone_reconnue_contenant
+from .utils import prevenir_accident, zone_reconnue_contenant
 
 _NIVEAU_PAR_GRAVITE = {
     Incident.NiveauGravite.MOYEN: Alerte.Niveau.VIGILANCE,
@@ -32,4 +32,4 @@ def creer_alerte_sur_incident(sender, instance, created, **kwargs):
     })
     if niveau == Alerte.Niveau.CRITIQUE:
         # Après validation de la transaction : on ne prévient pas pour un incident annulé.
-        transaction.on_commit(lambda: prevenir_choc_critique(alerte))
+        transaction.on_commit(lambda: prevenir_accident(alerte))

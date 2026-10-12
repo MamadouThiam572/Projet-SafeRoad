@@ -7,7 +7,7 @@ from .models import ConfigurationSysteme
 
 
 class ConfigurationPermissionsTests(TestCase):
-    """Les seuils de détection sont nationaux : un administrateur régional peut les lire,
+    """Les réglages (rayons, seuils GPS…) sont nationaux : un administrateur régional peut les lire,
     seul le super administrateur peut les modifier."""
 
     @classmethod
@@ -30,12 +30,12 @@ class ConfigurationPermissionsTests(TestCase):
 
     def test_admin_regional_ne_peut_pas_modifier_la_configuration(self):
         self.client.force_authenticate(user=self.admin_dakar)
-        reponse = self.client.put('/api/v1/configuration/', {'seuil_vitesse_choc': 10}, format='json')
+        reponse = self.client.put('/api/v1/configuration/', {'rayon_clustering_metres': 10}, format='json')
         self.assertEqual(reponse.status_code, 403)
-        self.assertEqual(ConfigurationSysteme.instance().seuil_vitesse_choc, 60.0)
+        self.assertEqual(ConfigurationSysteme.instance().rayon_clustering_metres, 300.0)
 
     def test_super_admin_peut_modifier_la_configuration(self):
         self.client.force_authenticate(user=self.super_admin)
-        reponse = self.client.put('/api/v1/configuration/', {'seuil_vitesse_choc': 70}, format='json')
+        reponse = self.client.put('/api/v1/configuration/', {'rayon_clustering_metres': 250}, format='json')
         self.assertEqual(reponse.status_code, 200)
-        self.assertEqual(ConfigurationSysteme.instance().seuil_vitesse_choc, 70.0)
+        self.assertEqual(ConfigurationSysteme.instance().rayon_clustering_metres, 250.0)

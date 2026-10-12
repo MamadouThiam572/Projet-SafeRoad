@@ -12,10 +12,18 @@ _TRAITEMENT = frozenset({'admin', 'super_admin'})
 
 class Incident(models.Model):
     class TypeIncident(models.TextChoices):
-        CHOC_VIOLENT = 'choc_violent', 'Choc violent'
+        # SafeRoad est un système de prévention : ces types sont les signaux de risque que le
+        # boîtier détecte (et valide en croisant ses capteurs) AVANT un éventuel accident.
         FREINAGE_BRUSQUE = 'freinage_brusque', 'Freinage brusque'
-        COLLISION = 'collision', 'Collision'
-        CHUTE = 'chute', 'Chute'
+        ACCELERATION_BRUSQUE = 'acceleration_brusque', 'Accélération brusque'
+        VIRAGE_DANGEREUX = 'virage_dangereux', 'Virage dangereux'
+        EXCES_VITESSE = 'exces_vitesse', 'Excès de vitesse'
+        OBSTACLE_CRITIQUE = 'obstacle_critique', 'Obstacle critique'
+        ROUTE_DEGRADEE = 'route_degradee', 'Route dégradée'
+        SECOUSSE_DANGEREUSE = 'secousse_dangereuse', 'Secousse dangereuse'
+        # Filet de sécurité : seul type qui déclenche l'alerte d'urgence. Le boîtier ne l'envoie
+        # que s'il a confirmé un accident par plusieurs capteurs (voir apps.alertes.utils).
+        ACCIDENT = 'accident', 'Accident'
         AUTRE = 'autre', 'Autre'
 
     class NiveauGravite(models.TextChoices):
@@ -31,9 +39,23 @@ class Incident(models.Model):
         # appartient à l'ANASER, au niveau des zones (voir apps/zones/models.py).
         VALIDE = 'valide', 'Validé techniquement'
         CLOTURE = 'cloture', 'Clôturé'
-        # Fausse détection (dos-d'âne pris pour un choc, capteur défaillant…) : l'incident reste
+        # Fausse détection (dos-d'âne pris pour une secousse dangereuse, capteur défaillant…) : l'incident reste
         # enregistré mais ne compte plus dans le calcul des zones (voir clustering.py).
         REJETE = 'rejete', 'Rejeté (faux positif)'
+
+    # Gravité d'un incident = celle du signal classé par le boîtier : le serveur ne la recalcule
+    # pas à partir d'un seul capteur (une route dégradée produirait de fausses alertes).
+    GRAVITE_PAR_TYPE = {
+        TypeIncident.ROUTE_DEGRADEE: NiveauGravite.FAIBLE,
+        TypeIncident.ACCELERATION_BRUSQUE: NiveauGravite.FAIBLE,
+        TypeIncident.EXCES_VITESSE: NiveauGravite.FAIBLE,
+        TypeIncident.FREINAGE_BRUSQUE: NiveauGravite.MOYEN,
+        TypeIncident.VIRAGE_DANGEREUX: NiveauGravite.MOYEN,
+        TypeIncident.SECOUSSE_DANGEREUSE: NiveauGravite.MOYEN,
+        TypeIncident.OBSTACLE_CRITIQUE: NiveauGravite.MOYEN,
+        TypeIncident.ACCIDENT: NiveauGravite.CRITIQUE,
+        TypeIncident.AUTRE: NiveauGravite.FAIBLE,
+    }
 
     S = Statut
     # (statut actuel, nouveau statut) -> rôles autorisés. Toute transition absente est refusée.

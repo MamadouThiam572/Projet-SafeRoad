@@ -98,10 +98,10 @@ class IncidentFiltrageRegionalTests(TestCase):
     def test_patch_est_impossible_sur_un_incident_quelle_que_soit_la_region(self):
         self.client.force_authenticate(user=self.admin_dakar)
         reponse_meme_region = self.client.patch(
-            f'/api/v1/incidents/{self.incident_dakar.id}/', {'type_incident': 'chute'}, format='json',
+            f'/api/v1/incidents/{self.incident_dakar.id}/', {'type_incident': 'route_degradee'}, format='json',
         )
         reponse_autre_region = self.client.patch(
-            f'/api/v1/incidents/{self.incident_thies.id}/', {'type_incident': 'chute'}, format='json',
+            f'/api/v1/incidents/{self.incident_thies.id}/', {'type_incident': 'route_degradee'}, format='json',
         )
         self.assertEqual(reponse_meme_region.status_code, 405)
         self.assertEqual(reponse_autre_region.status_code, 405)
@@ -192,7 +192,7 @@ class DonneesGpsIngestionTests(TestCase):
     def envoyer(self, **donnees):
         corps = {
             'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE,
-            'horodatage': timezone.now().isoformat(), 'type_incident': 'choc_violent',
+            'horodatage': timezone.now().isoformat(), 'type_incident': 'secousse_dangereuse',
         }
         corps.update(donnees)
         return self.client.post('/api/v1/incidents/ingestion/', corps, format='json', **self.entetes)
@@ -217,13 +217,19 @@ class DonneesGpsIngestionTests(TestCase):
         self.envoyer()
         self.assertTrue(Incident.objects.get().position_fiable)
 
-    def test_la_vitesse_gps_remplace_le_radar_absent_pour_la_gravite(self):
-        self.envoyer(vitesse_gps=90)
-        self.assertEqual(Incident.objects.get().niveau_gravite, Incident.NiveauGravite.CRITIQUE)
+    def test_la_gravite_suit_le_type_classe_par_le_boitier(self):
+        # Pas de recalcul à partir d'un seul capteur : une secousse reste « moyenne » quelle que
+        # soit la vitesse, seul un accident confirmé par le boîtier est « critique ».
+        self.envoyer(type_incident='secousse_dangereuse', vitesse_radar=120)
+        self.envoyer(type_incident='route_degradee')
+        self.envoyer(type_incident='accident')
+        self.assertEqual(
+            dict(Incident.objects.values_list('type_incident', 'niveau_gravite')),
+            {'secousse_dangereuse': 'moyen', 'route_degradee': 'faible', 'accident': 'critique'},
+        )
 
-    def test_le_radar_reste_prioritaire_sur_la_vitesse_gps(self):
-        self.envoyer(vitesse_radar=10, vitesse_gps=90)
-        self.assertEqual(Incident.objects.get().niveau_gravite, Incident.NiveauGravite.FAIBLE)
+    def test_un_ancien_type_est_refuse(self):
+        self.assertEqual(self.envoyer(type_incident='choc_violent').status_code, 400)
 
     def test_valeurs_negatives_refusees(self):
         self.assertEqual(self.envoyer(hdop=-1).status_code, 400)
@@ -232,7 +238,7 @@ class DonneesGpsIngestionTests(TestCase):
     def test_le_lot_hors_ligne_applique_les_memes_regles(self):
         horodatage = timezone.now().isoformat()
         commun = {'latitude': LATITUDE_BASE, 'longitude': LONGITUDE_BASE, 'horodatage': horodatage,
-                  'type_incident': 'choc_violent'}
+                  'type_incident': 'secousse_dangereuse'}
         reponse = self.client.post('/api/v1/incidents/sync-batch/', {'incidents': [
             {**commun, 'hdop': 0.8, 'nombre_satellites': 10},
             {**commun, 'hdop': 9.0, 'nombre_satellites': 10},
@@ -293,7 +299,7 @@ class TraitementIncidentTests(TestCase):
 
     def test_rejeter_un_faux_positif_doit_etre_motive(self):
         self.assertEqual(self.changer(self.admin_dakar, 'rejete').status_code, 400)
-        reponse = self.changer(self.admin_dakar, 'rejete', 'Dos-d\'âne pris pour un choc')
+        reponse = self.changer(self.admin_dakar, 'rejete', 'Dos-d\'âne pris pour une secousse')
         self.assertEqual(reponse.status_code, 200)
         self.assertEqual(reponse.data['statut_libelle'], 'Rejeté (faux positif)')
 

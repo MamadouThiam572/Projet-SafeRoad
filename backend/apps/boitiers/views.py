@@ -201,9 +201,9 @@ class BoitierViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[EstBoitier])
     def configuration(self, request):
-        """Paramètres que le firmware récupère au démarrage puis périodiquement : seuils de
-        détection, rythme d'envoi, et numéro du contact d'urgence du conducteur qui porte le
-        boîtier (SMS envoyé par le SIM800L lui-même en cas de choc critique, sans dépendre
+        """Paramètres que le firmware récupère au démarrage puis périodiquement : rythme
+        d'envoi, rayon d'alerte de zone, et numéro du contact d'urgence du conducteur qui porte le
+        boîtier (SMS envoyé par le SIM800L lui-même en cas d'accident, sans dépendre
         d'Internet ni du serveur)."""
         boitier = request.user
         config = ConfigurationSysteme.instance()
@@ -212,8 +212,6 @@ class BoitierViewSet(viewsets.ModelViewSet):
         if conducteur and conducteur.contact_urgence_telephone:
             contact = {'nom': conducteur.contact_urgence_nom, 'telephone': conducteur.contact_urgence_telephone}
         return Response({
-            'seuil_acceleration_critique': config.seuil_acceleration_critique,
-            'seuil_vitesse_choc': config.seuil_vitesse_choc,
             'intervalle_sync_secondes': config.intervalle_sync_secondes,
             'rayon_alerte_proximite_metres': config.rayon_alerte_proximite_metres,
             'conducteur': f"{conducteur.prenom} {conducteur.nom}" if conducteur else None,

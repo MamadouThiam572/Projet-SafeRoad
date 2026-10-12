@@ -4,8 +4,6 @@ from django.db import models
 
 
 class ConfigurationSysteme(models.Model):
-    seuil_acceleration_critique = models.FloatField(default=25.0, help_text="m/s², au-delà = incident critique")
-    seuil_vitesse_choc = models.FloatField(default=60.0, help_text="km/h, au-delà = incident critique")
     rayon_clustering_metres = models.FloatField(default=300.0)
     min_incidents_pour_zone = models.PositiveIntegerField(default=3)
     rayon_alerte_proximite_metres = models.FloatField(default=1000.0)

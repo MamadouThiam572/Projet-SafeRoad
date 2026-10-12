@@ -27,7 +27,7 @@ class Conducteur(AbstractBaseUser):
     prenom = models.CharField(max_length=100)
     telephone = models.CharField(max_length=30, blank=True)
     adresse = models.CharField(max_length=200, blank=True)
-    # Prévenu par SMS par le boîtier lui-même (SIM800L) en cas de choc critique : voir
+    # Prévenu par SMS par le boîtier lui-même (SIM800L) en cas d'accident : voir
     # GET /boitiers/configuration/, qui transmet ce numéro au boîtier.
     contact_urgence_nom = models.CharField(max_length=150, blank=True)
     contact_urgence_telephone = models.CharField(max_length=30, blank=True)

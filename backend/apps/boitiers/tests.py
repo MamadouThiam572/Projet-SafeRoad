@@ -692,7 +692,7 @@ class ConfigurationBoitierTests(TestCase):
         donnees = APIClient().get('/api/v1/boitiers/configuration/', **self.entetes).data
         self.assertEqual(donnees['contact_urgence'], {'nom': 'Fatou Ba', 'telephone': '+221775556677'})
         self.assertEqual(donnees['conducteur'], 'Awa Ba')
-        self.assertEqual(donnees['seuil_vitesse_choc'], 60.0)
+        self.assertEqual(donnees['intervalle_sync_secondes'], 60)
         self.assertEqual(donnees['numeros_secours']['samu'], '1515')
 
     def test_sans_conducteur_pas_de_contact(self):

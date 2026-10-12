@@ -24,7 +24,7 @@ def creer_incident_critique(boitier, **kwargs):
         'latitude': LATITUDE_BASE,
         'longitude': LONGITUDE_BASE,
         'horodatage': timezone.now(),
-        'type_incident': Incident.TypeIncident.COLLISION,
+        'type_incident': Incident.TypeIncident.ACCIDENT,
         'niveau_gravite': Incident.NiveauGravite.CRITIQUE,
     }
     donnees.update(kwargs)
@@ -329,9 +329,9 @@ class AlerteSourcesTests(TestCase):
 
 
 @override_settings(SMS_BACKEND='memoire')
-class UrgenceChocCritiqueTests(TestCase):
-    """Choc critique récent -> SMS à l'admin de la région (avec téléphone) et e-mail au super
-    admin, une seule fois par boîtier sur 10 minutes ; rien pour un choc ancien ou non critique."""
+class UrgenceAccidentTests(TestCase):
+    """Accident récent signalé par le boîtier -> SMS à l'admin de la région (avec téléphone) et e-mail au super
+    admin, une seule fois par boîtier sur 10 minutes ; rien pour un accident ancien ni pour un autre type."""
 
     @classmethod
     def setUpTestData(cls):
@@ -353,30 +353,38 @@ class UrgenceChocCritiqueTests(TestCase):
         Conducteur.objects.create_user(email='moussa-urg@test.sn', password='x', nom='Diop', prenom='Moussa',
                                        boitier=self.boitier)
 
-    def choc(self, **extra):
+    def accident(self, **extra):
         with self.captureOnCommitCallbacks(execute=True):
             return creer_incident_critique(self.boitier, vitesse_radar=72, **extra)
 
-    def test_choc_critique_previent_l_admin_de_la_region_et_le_super_admin(self):
-        incident = self.choc()
+    def test_un_accident_previent_l_admin_de_la_region_et_le_super_admin(self):
+        incident = self.accident()
         self.assertEqual([numero for numero, _ in boite_sms], ['+221771112233'])
         sms = boite_sms[0][1]
-        self.assertIn('CHOC CRITIQUE', sms)
+        self.assertIn('ACCIDENT signale', sms)
         self.assertIn('DK-4471-EF (Moussa Diop), 72 km/h', sms)
         self.assertIn(f'https://maps.google.com/?q={incident.latitude:.5f},{incident.longitude:.5f}', sms)
         self.assertEqual([m.to for m in mail.outbox], [['super-urg@test.sn']])
 
     def test_un_seul_envoi_par_boitier_sur_dix_minutes(self):
-        self.choc()
-        self.choc()
+        self.accident()
+        self.accident()
         self.assertEqual(len(boite_sms), 1)
         self.assertEqual(len(mail.outbox), 1)
 
-    def test_un_choc_remonte_en_differe_ne_declenche_pas_d_urgence(self):
-        self.choc(horodatage=timezone.now() - timezone.timedelta(hours=3))
+    def test_un_accident_remonte_en_differe_ne_declenche_pas_d_urgence(self):
+        self.accident(horodatage=timezone.now() - timezone.timedelta(hours=3))
         self.assertEqual(boite_sms, [])
 
     def test_un_incident_moyen_ne_declenche_pas_d_urgence(self):
         with self.captureOnCommitCallbacks(execute=True):
             creer_incident_critique(self.boitier, niveau_gravite=Incident.NiveauGravite.MOYEN)
         self.assertEqual(boite_sms, [])
+
+    def test_seul_un_accident_declenche_l_urgence(self):
+        # Système de prévention : une secousse dangereuse (route très dégradée, gros nid-de-poule)
+        # n'est jamais traitée comme un accident, même classée critique.
+        with self.captureOnCommitCallbacks(execute=True):
+            creer_incident_critique(self.boitier, type_incident=Incident.TypeIncident.SECOUSSE_DANGEREUSE)
+        self.assertEqual(boite_sms, [])
+        self.assertEqual(mail.outbox, [])
