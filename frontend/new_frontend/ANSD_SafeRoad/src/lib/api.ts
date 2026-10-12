@@ -323,6 +323,8 @@ async function authorizedFetch<T>(path: string, options: RequestInit = {}, retry
 export interface BoitierApi {
   id: string
   numero_immatriculation: string
+  /** Adresse MAC de l'ESP32 : c'est elle qui identifie le boîtier dans ses messages MQTT. */
+  adresse_mac: string | null
   region: string | null
   region_libelle: string | null
   statut: 'actif' | 'inactif' | 'maintenance'
@@ -348,15 +350,20 @@ export function getBoitiers(): Promise<BoitierApi[]> {
 }
 
 /** Enregistrement : le backend génère l'UUID et la clé API, renvoyée UNE SEULE fois (`api_key`). */
-export function creerBoitier(donnees: { region: string; numero_immatriculation?: string }): Promise<BoitierApi & { api_key: string }> {
+export function creerBoitier(donnees: { region: string; numero_immatriculation?: string; adresse_mac?: string | null }): Promise<BoitierApi & { api_key: string }> {
   return authorizedFetch('/boitiers/', { method: 'POST', body: JSON.stringify(donnees) })
 }
 
 export function modifierBoitier(
   id: string,
-  donnees: Partial<{ region: string; numero_immatriculation: string; statut: BoitierApi['statut'] }>,
+  donnees: Partial<{ region: string; numero_immatriculation: string; adresse_mac: string | null; statut: BoitierApi['statut'] }>,
 ): Promise<BoitierApi> {
   return authorizedFetch(`/boitiers/${id}/`, { method: 'PATCH', body: JSON.stringify(donnees) })
+}
+
+/** Boîtiers entendus en MQTT ces dernières 24 h avec une adresse MAC sans fiche (super admin). */
+export function getBoitiersDetectes(): Promise<{ adresse_mac: string; message: string; derniere_detection: string }[]> {
+  return authorizedFetch('/boitiers/detectes/')
 }
 
 export function affecterBoitier(id: string, conducteur: string): Promise<BoitierApi> {

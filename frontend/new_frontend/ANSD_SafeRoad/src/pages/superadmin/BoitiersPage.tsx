@@ -18,6 +18,7 @@ import {
   creerBoitier,
   desaffecterBoitier,
   getBoitiers,
+  getBoitiersDetectes,
   getConducteurs,
   getHistoriqueBoitier,
   modifierBoitier,
@@ -182,6 +183,7 @@ function DetailPanel({ boitier: b, conducteur, onBack, onEdit, onAssign, onUnass
           <DetailRow label="Statut administratif">{b.status === 'actif' ? 'Actif' : 'Inactif'}</DetailRow>
           <DetailRow label="Date d'enregistrement">{formatDay(b.registeredAt)}</DetailRow>
           <DetailRow label="Région">{regionName(b.region)}</DetailRow>
+          <DetailRow label="Adresse MAC">{b.mac || 'Non renseignée'}</DetailRow>
         </dl>
       </DetailSection>
 
@@ -356,6 +358,7 @@ interface BoitierFormValues {
   id: string
   region: string
   conducteurId: string
+  mac: string
 }
 
 /** Enregistrement d'un nouveau boîtier, ou modification de ses informations administratives. */
@@ -364,6 +367,7 @@ function BoitierForm({
   boitiers,
   conducteurs,
   defaultRegion,
+  defaultMac = '',
   regionImposee = false,
   onSubmit,
   onClose,
@@ -372,6 +376,8 @@ function BoitierForm({
   boitiers: Boitier[]
   conducteurs: Conducteur[]
   defaultRegion: string
+  /** MAC pré-remplie (création depuis un boîtier détecté non enregistré). */
+  defaultMac?: string
   /** Admin régional : la région est toujours la sienne (règle du backend). */
   regionImposee?: boolean
   onSubmit: (v: BoitierFormValues) => void
@@ -381,6 +387,7 @@ function BoitierForm({
     id: initial?.immatriculation ?? '',
     region: initial?.region ?? defaultRegion,
     conducteurId: '',
+    mac: initial?.mac ?? defaultMac,
   })
   const [errors, setErrors] = useState<Partial<Record<keyof BoitierFormValues, string>>>({})
 
@@ -394,6 +401,7 @@ function BoitierForm({
   const validate = () => {
     const next: Partial<Record<keyof BoitierFormValues, string>> = {}
     if (!v.region) next.region = 'Choisissez une région.'
+    if (v.mac.trim() && v.mac.replace(/[^0-9a-f]/gi, '').length !== 12) next.mac = 'Adresse MAC invalide (ex : 24:6F:28:AA:BB:CC).'
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -419,6 +427,22 @@ function BoitierForm({
               placeholder="Ex : DK-1234-AB"
             />
             {errors.id && <span className="mt-1 block text-[11px] font-semibold text-danger-600">{errors.id}</span>}
+          </label>
+          <label className="block">
+            <span className={labelCls}>Adresse MAC du boîtier (ESP32)</span>
+            <input
+              className={fieldCls}
+              value={v.mac}
+              onChange={(e) => {
+                setV((p) => ({ ...p, mac: e.target.value }))
+                setErrors((p) => ({ ...p, mac: undefined }))
+              }}
+              placeholder="Ex : 24:6F:28:AA:BB:CC"
+            />
+            {errors.mac && <span className="mt-1 block text-[11px] font-semibold text-danger-600">{errors.mac}</span>}
+            <span className="mt-1 block text-[11px] text-faint">
+              Envoyée par le boîtier dans chaque message : c'est elle qui permet de le reconnaître automatiquement.
+            </span>
           </label>
           <label className="block">
             <span className={labelCls}>Région *</span>
@@ -564,6 +588,8 @@ export function BoitiersPage() {
   const { user } = useAuth()
   const regionFixe = user?.role === 'sous_admin' ? (user.region ?? '') : null
   const [boitiers, setBoitiers] = useState<Boitier[]>([])
+  const [detectes, setDetectes] = useState<{ adresse_mac: string; message: string; derniere_detection: string }[]>([])
+  const [macPourCreation, setMacPourCreation] = useState('')
   const [conducteurs, setConducteurs] = useState<Conducteur[]>([])
   const [lastRefresh, setLastRefresh] = useState(() => formatNow())
   // Clés API obtenues pendant cette visite (création / réinitialisation), par UUID : jamais relues.
@@ -574,8 +600,10 @@ export function BoitiersPage() {
     const [bs, cs] = await Promise.all([getBoitiers(), getConducteurs()])
     setBoitiers(bs.map(boitierDepuisApi))
     setConducteurs(cs.map(conducteurDepuisApi))
+    // Boîtiers qui publient avec une MAC inconnue : réservé au super admin.
+    setDetectes(regionFixe === null ? await getBoitiersDetectes().catch(() => []) : [])
     setLastRefresh(formatNow())
-  }, [])
+  }, [regionFixe])
 
   useEffect(() => {
     recharger().catch(() => setToast('Serveur injoignable : vérifiez que le backend est lancé.'))
@@ -843,12 +871,13 @@ export function BoitiersPage() {
     const immatriculation = values.id.trim()
     if (editBoitier) {
       void action(
-        () => modifierBoitier(editBoitier.uuid, { region: values.region, numero_immatriculation: immatriculation }),
+        () =>
+          modifierBoitier(editBoitier.uuid, { region: values.region, numero_immatriculation: immatriculation, adresse_mac: values.mac.trim() || null }),
         `${editBoitier.id} mis à jour.`,
       )
     } else {
       void action(async () => {
-        const cree = await creerBoitier({ region: values.region, numero_immatriculation: immatriculation })
+        const cree = await creerBoitier({ region: values.region, numero_immatriculation: immatriculation, adresse_mac: values.mac.trim() || null })
         setClesObtenues((prev) => ({ ...prev, [cree.id]: cree.api_key }))
         if (values.conducteurId) await affecterBoitier(cree.id, values.conducteurId)
         if (hasFilters) resetFilters()
@@ -952,6 +981,35 @@ export function BoitiersPage() {
           <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh}</p>
         </div>
       </section>
+
+      {detectes.length > 0 && (
+        <section className="mx-6 mt-4 rounded-xl border-2 border-warning-600 bg-[#fdf4e6] p-4">
+          <p className="m-0 text-[13.5px] font-extrabold text-ink">
+            {detectes.length === 1 ? 'Un boîtier non enregistré publie des données' : `${detectes.length} boîtiers non enregistrés publient des données`}
+          </p>
+          <p className="m-0 mt-1 text-[12px] text-body">
+            Ses messages sont ignorés tant qu'aucune fiche ne porte son adresse MAC. Créez sa fiche : il sera reconnu dès son message suivant.
+          </p>
+          <ul className="m-0 mt-2.5 flex list-none flex-col gap-2 p-0">
+            {detectes.map((d) => (
+              <li key={d.adresse_mac} className="flex flex-wrap items-center gap-3 text-[12.5px]">
+                <code className="rounded bg-white px-2 py-1 font-bold text-ink">{d.adresse_mac}</code>
+                <span className="text-faint">{d.message}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMacPourCreation(d.adresse_mac)
+                    setFormMode({ editId: null })
+                  }}
+                  className="rounded-[9px] bg-brand-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-brand-700"
+                >
+                  Créer sa fiche
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Cartes de synthèse */}
       <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1313,9 +1371,13 @@ export function BoitiersPage() {
           boitiers={boitiers}
           conducteurs={conducteurs}
           defaultRegion={regionFixe ?? (region === 'toutes' ? '' : region)}
+          defaultMac={editBoitier ? '' : macPourCreation}
           regionImposee={regionFixe !== null}
           onSubmit={submitForm}
-          onClose={() => setFormMode(null)}
+          onClose={() => {
+            setFormMode(null)
+            setMacPourCreation('')
+          }}
         />
       )}
 

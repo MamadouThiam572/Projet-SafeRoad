@@ -60,6 +60,8 @@ export interface Boitier {
   history: HistoryEntry[]
   /** Immatriculation du véhicule équipé (donnée réelle du backend). */
   immatriculation?: string
+  /** Adresse MAC de l'ESP32 (identifie le boîtier dans ses messages MQTT). */
+  mac?: string
 }
 
 /* ------------------------------------------------------------------ */
@@ -237,6 +239,7 @@ export function boitierDepuisApi(b: BoitierApi): Boitier {
     assignedAt: b.date_affectation ? b.date_affectation.slice(0, 10) : null,
     history: [],
     immatriculation: b.numero_immatriculation,
+    mac: b.adresse_mac ?? '',
   }
 }
 
