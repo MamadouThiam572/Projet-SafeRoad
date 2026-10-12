@@ -22,7 +22,6 @@ import { DashboardPage as SuperAdminDashboardPage } from '@/pages/superadmin/Das
 import { UtilisateursPage as SuperAdminUtilisateursPage } from '@/pages/superadmin/UtilisateursPage'
 import { BoitiersPage as SuperAdminBoitiersPage } from '@/pages/superadmin/BoitiersPage'
 import { MonitoringPage as SuperAdminMonitoringPage } from '@/pages/superadmin/MonitoringPage'
-import { IncidentsPage as SuperAdminIncidentsPage } from '@/pages/superadmin/IncidentsPage'
 import { AccueilPage as ClientAccueilPage } from '@/pages/client/AccueilPage'
 import { AlertesPage } from '@/pages/client/AlertesPage'
 import { CarteZonesPage } from '@/pages/client/CarteZonesPage'
@@ -100,12 +99,7 @@ export function AppRoutes() {
           <Route path={PATHS.anaser.root} element={<AnaserDashboardPage />} />
           <Route
             path={PATHS.anaser.incidents}
-            element={
-              <PageStub
-                title="Incidents"
-                description="Vue nationale, lecture seule. Consultation de tous les incidents remontés par les boîtiers."
-              />
-            }
+            element={<AdminIncidentsPage national />}
           />
           <Route
             path={PATHS.anaser.zones}
@@ -127,7 +121,8 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.utilisateurs} element={<SuperAdminUtilisateursPage />} />
           <Route path={PATHS.superAdmin.boitiers} element={<SuperAdminBoitiersPage />} />
           <Route path={PATHS.superAdmin.monitoring} element={<SuperAdminMonitoringPage />} />
-          <Route path={PATHS.superAdmin.incidents} element={<SuperAdminIncidentsPage />} />
+          {/* Vue réelle commune ; la page détaillée pages/superadmin/IncidentsPage.tsx est mise de côté. */}
+          <Route path={PATHS.superAdmin.incidents} element={<AdminIncidentsPage national />} />
           {/* Vue réelle commune ; la page détaillée pages/superadmin/SignalementsPage.tsx est mise de côté. */}
           <Route path={PATHS.superAdmin.signalements} element={<AdminSignalementsPage national />} />
           {/* Vue réelle commune (validation, archivage, recalcul). La page détaillée pages/superadmin/ZonesPage.tsx

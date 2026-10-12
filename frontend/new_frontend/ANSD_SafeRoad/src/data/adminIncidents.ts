@@ -1,3 +1,5 @@
+import type { IncidentApi, StatutIncidentApi } from '@/lib/api'
+
 /**
  * Données de la page /admin/incidents (« Gestion des incidents » de
  * l'administrateur régional). Données de démonstration en attendant
@@ -12,11 +14,15 @@
  */
 
 export type Gravite = 'critique' | 'elevee' | 'moyenne' | 'faible' | 'autre'
-export type StatutIncident = 'a_examiner' | 'en_cours' | 'transmis' | 'cloture'
+export type StatutIncident = StatutIncidentApi
 export type SourceIncident = 'boitier' | 'manuel'
 
 export interface Incident {
   id: string
+  /** Incident du backend (fiche détaillée, décisions). */
+  api: IncidentApi
+  lat: number
+  lng: number
   date: string
   heure: string
   /** Horodatage triable (ISO) dérivé de date+heure, pour trier/paginer sans reparser des chaînes françaises. */
@@ -40,10 +46,11 @@ export const GRAVITE_META: Record<Gravite, { label: string; color: string; soft:
 }
 
 export const STATUT_META: Record<StatutIncident, { label: string; soft: string; text: string }> = {
-  a_examiner: { label: 'À examiner', soft: '#fdf4e6', text: '#e8940c' },
+  nouveau: { label: 'À examiner', soft: '#fdf4e6', text: '#e8940c' },
   en_cours: { label: 'En cours', soft: '#e8f0f9', text: '#2b6cb0' },
-  transmis: { label: 'Transmis', soft: '#f1eafe', text: '#7c3aed' },
+  valide: { label: 'Validé techniquement', soft: '#f1eafe', text: '#7c3aed' },
   cloture: { label: 'Clôturé', soft: '#e9f6ee', text: '#1f9d55' },
+  rejete: { label: 'Rejeté (faux positif)', soft: '#f1f5f9', text: '#64748b' },
 }
 
 export const SOURCE_META: Record<SourceIncident, { label: string; icon: string }> = {
@@ -51,33 +58,45 @@ export const SOURCE_META: Record<SourceIncident, { label: string; icon: string }
   manuel: { label: 'Manuel', icon: 'edit_note' },
 }
 
-export const INCIDENTS: Incident[] = [
-  { id: 'INC-101', date: '01/10/2026', heure: '14:32', ts: '2026-10-01T14:32', localite: 'Centre-ville', lieu: 'RN3 – Km 12', offset: [0.023, 0.05], type: 'Obstacle critique', gravite: 'elevee', source: 'boitier', boitier: 'SR-01', statut: 'a_examiner' },
-  { id: 'INC-102', date: '01/10/2026', heure: '10:15', ts: '2026-10-01T10:15', localite: 'Centre-ville', lieu: 'Avenue principale', offset: [0.001, -0.006], type: 'Freinage brusque', gravite: 'moyenne', source: 'boitier', boitier: 'SR-02', statut: 'en_cours' },
-  { id: 'INC-103', date: '30/09/2026', heure: '18:47', ts: '2026-09-30T18:47', localite: 'Périphérie', lieu: 'Rond-point central', offset: [0.014, -0.026], type: 'Secousse dangereuse', gravite: 'elevee', source: 'manuel', statut: 'transmis' },
-  { id: 'INC-104', date: '30/09/2026', heure: '09:21', ts: '2026-09-30T09:21', localite: 'Périphérie ouest', lieu: 'Route de contournement', offset: [-0.033, -0.084], type: 'Incident matériel', gravite: 'faible', source: 'boitier', boitier: 'SR-03', statut: 'cloture' },
-  { id: 'INC-105', date: '29/09/2026', heure: '21:03', ts: '2026-09-29T21:03', localite: 'Zone de la gare', lieu: 'Route de la gare', offset: [0.058, 0.09], type: 'Autre', gravite: 'autre', source: 'boitier', boitier: 'SR-04', statut: 'en_cours' },
-  { id: 'INC-106', date: '29/09/2026', heure: '07:40', ts: '2026-09-29T07:40', localite: 'Centre-ville', lieu: 'Marché central', offset: [-0.008, 0.034], type: 'Obstacle critique', gravite: 'elevee', source: 'boitier', boitier: 'SR-02', statut: 'a_examiner' },
-  { id: 'INC-107', date: '28/09/2026', heure: '16:12', ts: '2026-09-28T16:12', localite: 'Sortie nord', lieu: 'Sortie ville — RN4', offset: [0.088, 0.036], type: 'Excès de vitesse', gravite: 'elevee', source: 'manuel', statut: 'a_examiner' },
-  { id: 'INC-108', date: '28/09/2026', heure: '11:55', ts: '2026-09-28T11:55', localite: 'Axe principal', lieu: 'RN3 – Km 18', offset: [0.031, 0.063], type: 'Freinage brusque', gravite: 'moyenne', source: 'boitier', boitier: 'SR-01', statut: 'cloture' },
-  { id: 'INC-109', date: '27/09/2026', heure: '19:08', ts: '2026-09-27T19:08', localite: 'Zone résidentielle', lieu: 'Rue des manguiers', offset: [-0.051, 0.012], type: 'Incident matériel', gravite: 'faible', source: 'boitier', boitier: 'SR-05', statut: 'en_cours' },
-  { id: 'INC-110', date: '27/09/2026', heure: '08:27', ts: '2026-09-27T08:27', localite: 'Centre-ville', lieu: 'Avenue principale', offset: [0.001, -0.006], type: 'Obstacle critique', gravite: 'elevee', source: 'boitier', boitier: 'SR-02', statut: 'cloture' },
-  { id: 'INC-111', date: '26/09/2026', heure: '15:50', ts: '2026-09-26T15:50', localite: 'Zone est', lieu: 'Route de la gare', offset: [0.058, 0.09], type: 'Secousse dangereuse', gravite: 'elevee', source: 'boitier', boitier: 'SR-04', statut: 'transmis' },
-  { id: 'INC-112', date: '26/09/2026', heure: '12:03', ts: '2026-09-26T12:03', localite: 'Périphérie ouest', lieu: 'Route de contournement', offset: [-0.033, -0.084], type: 'Incident matériel', gravite: 'faible', source: 'manuel', statut: 'a_examiner' },
-  { id: 'INC-113', date: '25/09/2026', heure: '17:36', ts: '2026-09-25T17:36', localite: 'Centre-ville', lieu: 'Rond-point central', offset: [0.014, -0.026], type: 'Freinage brusque', gravite: 'moyenne', source: 'boitier', boitier: 'SR-03', statut: 'en_cours' },
-  { id: 'INC-114', date: '24/09/2026', heure: '20:14', ts: '2026-09-24T20:14', localite: 'Sortie nord', lieu: 'Sortie ville — RN4', offset: [0.088, 0.036], type: 'Autre', gravite: 'autre', source: 'boitier', boitier: 'SR-05', statut: 'cloture' },
-  { id: 'INC-115', date: '24/09/2026', heure: '06:52', ts: '2026-09-24T06:52', localite: 'Axe principal', lieu: 'RN3 – Km 12', offset: [0.023, 0.05], type: 'Obstacle critique', gravite: 'elevee', source: 'boitier', boitier: 'SR-01', statut: 'a_examiner' },
-  { id: 'INC-116', date: '23/09/2026', heure: '13:29', ts: '2026-09-23T13:29', localite: 'Centre-ville', lieu: 'Marché central', offset: [-0.008, 0.034], type: 'Excès de vitesse', gravite: 'elevee', source: 'boitier', boitier: 'SR-02', statut: 'cloture' },
-]
+const GRAVITE_DEPUIS_API: Record<IncidentApi['niveau_gravite'], Gravite> = {
+  critique: 'critique',
+  moyen: 'moyenne',
+  faible: 'faible',
+}
 
-/**
- * Tendances sur quelques périodes récentes, pour la petite courbe (sparkline)
- * de chaque carte KPI — un agrégat temporel qui ne se déduit pas de la seule
- * liste d'incidents ci-dessus (qui ne couvre qu'un instantané). Démonstration.
- */
-export const KPI_TRENDS = {
-  total: [19, 21, 24, 22, 26, 25, 28],
-  aExaminer: [4, 6, 5, 7, 6, 8, 9],
-  enCours: [5, 6, 7, 6, 7, 7, 8],
-  clotures: [8, 7, 9, 10, 9, 10, 11],
+const p2 = (n: number) => String(n).padStart(2, '0')
+
+/** Incident du backend -> ligne de la page (position réelle, boîtier, statut de traitement). */
+export function incidentDepuisApi(a: IncidentApi, centre: [number, number]): Incident {
+  const t = new Date(a.horodatage)
+  return {
+    id: `INC-${a.id}`,
+    api: a,
+    lat: a.latitude,
+    lng: a.longitude,
+    date: `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()}`,
+    heure: `${p2(t.getHours())}:${p2(t.getMinutes())}`,
+    ts: a.horodatage,
+    localite: a.zone ? `Zone Z-${a.zone}` : 'Hors zone connue',
+    lieu: a.position_fiable ? 'Position GPS' : 'Position GPS douteuse',
+    offset: [a.latitude - centre[0], a.longitude - centre[1]],
+    type: a.type_incident_libelle,
+    gravite: GRAVITE_DEPUIS_API[a.niveau_gravite],
+    source: 'boitier',
+    boitier: `SR-${a.boitier.slice(0, 8).toUpperCase()}`,
+    statut: a.statut as StatutIncident,
+  }
+}
+
+/** Nombre d'incidents de chacun des 7 derniers jours (courbes des cartes KPI). */
+export function tendance7j(liste: Incident[], filtre: (i: Incident) => boolean = () => true): number[] {
+  return Array.from({ length: 7 }, (_, k) => {
+    const d = new Date()
+    d.setDate(d.getDate() - 6 + k)
+    const jour = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+    return liste.filter((i) => {
+      const t = new Date(i.ts)
+      return filtre(i) && `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())}` === jour
+    }).length
+  })
 }

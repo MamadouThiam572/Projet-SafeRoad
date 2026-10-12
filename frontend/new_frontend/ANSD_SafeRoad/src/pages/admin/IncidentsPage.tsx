@@ -4,16 +4,21 @@ import 'leaflet/dist/leaflet.css'
 import { useAuth } from '@/context/AuthContext'
 import {
   GRAVITE_META,
-  INCIDENTS,
-  KPI_TRENDS,
+  incidentDepuisApi,
   SOURCE_META,
   STATUT_META,
+  tendance7j,
   type Gravite,
   type StatutIncident,
 } from '@/data/adminIncidents'
-import { daysSince, latestDate } from '@/lib/period'
-import { formatCoords, offsetLatLng, regionCenter, regionLabel } from '@/lib/regions'
+import { FicheIncident } from '@/components/incidents/FicheIncident'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getIncidents } from '@/lib/api'
+import { daysSince } from '@/lib/period'
+import { formatCoords, regionCenter, regionLabel } from '@/lib/regions'
 import { IncidentsEnDirect } from '@/components/incidents/IncidentsEnDirect'
+
+const NATIONAL_CENTER: [number, number] = [14.45, -14.6]
 
 const PAGE_SIZE = 8
 
@@ -68,13 +73,23 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
   )
 }
 
-export function IncidentsPage() {
+/**
+ * Incidents détectés par les boîtiers. Admin régional : sa région (filtrée par le backend) ;
+ * `national` : tout le pays (super admin, et ANASER en lecture seule).
+ */
+export function IncidentsPage({ national = false }: { national?: boolean }) {
   const { user } = useAuth()
-  const region = regionLabel(user?.region)
-  const center = useMemo(() => regionCenter(user?.region), [user?.region])
+  const region = national ? 'Sénégal' : regionLabel(user?.region)
+  const center = useMemo(() => (national ? NATIONAL_CENTER : regionCenter(user?.region)), [national, user?.region])
 
-  /* Date de référence pour le filtre Période = le jour le plus récent du jeu de données (voir src/lib/period.ts). */
-  const reference = useMemo(() => latestDate(INCIDENTS.map((i) => i.ts)), [])
+  // 300 incidents les plus récents, rafraîchis toutes les 30 s.
+  const { donnees, erreur, maj, recharger } = useEnDirect(getIncidents, 30_000)
+  const INCIDENTS = useMemo(() => (donnees ?? []).map((a) => incidentDepuisApi(a, center)), [donnees, center])
+  const [ficheId, setFicheId] = useState<number | null>(null)
+  const fiche = donnees?.find((a) => a.id === ficheId) ?? null
+
+  /* Date de référence pour le filtre Période = maintenant (dernière actualisation). */
+  const reference = useMemo(() => new Date(maj), [maj])
 
   const [periode, setPeriode] = useState<Periode>('tout')
   const [search, setSearch] = useState('')
@@ -86,11 +101,11 @@ export function IncidentsPage() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const localites = useMemo(() => Array.from(new Set(INCIDENTS.map((i) => i.localite))).sort(), [])
-  const types = useMemo(() => Array.from(new Set(INCIDENTS.map((i) => i.type))).sort(), [])
+  const localites = useMemo(() => Array.from(new Set(INCIDENTS.map((i) => i.localite))).sort(), [INCIDENTS])
+  const types = useMemo(() => Array.from(new Set(INCIDENTS.map((i) => i.type))).sort(), [INCIDENTS])
   const boitiers = useMemo(
     () => Array.from(new Set(INCIDENTS.map((i) => i.boitier).filter((b): b is string => Boolean(b)))).sort(),
-    [],
+    [INCIDENTS],
   )
 
   /* Sous-ensemble scopé par Période — alimente à la fois les KPI (voir leur
@@ -98,7 +113,7 @@ export function IncidentsPage() {
      autres filtres (recherche, localité…) viennent ensuite affiner. */
   const periodFiltered = useMemo(
     () => INCIDENTS.filter((i) => matchesPeriode(i.ts, periode, reference)),
-    [periode, reference],
+    [periode, reference, INCIDENTS],
   )
 
   const filtered = useMemo(() => {
@@ -120,20 +135,21 @@ export function IncidentsPage() {
 
   const kpis = useMemo(() => {
     const total = periodFiltered.length
-    const aExaminer = periodFiltered.filter((i) => i.statut === 'a_examiner').length
-    const enCours = periodFiltered.filter((i) => i.statut === 'en_cours' || i.statut === 'transmis').length
-    const clotures = periodFiltered.filter((i) => i.statut === 'cloture').length
+    const aExaminer = periodFiltered.filter((i) => i.statut === 'nouveau').length
+    const enCours = periodFiltered.filter((i) => i.statut === 'en_cours' || i.statut === 'valide').length
+    const clotures = periodFiltered.filter((i) => i.statut === 'cloture' || i.statut === 'rejete').length
+    // Courbes : incidents de chacun des 7 derniers jours, selon leur statut actuel.
     return [
-      { key: 'total', icon: 'report', tint: '#dc3a2f', soft: '#fdeeec', value: total, label: 'Total des incidents', sub: 'Sur la période sélectionnée', trend: KPI_TRENDS.total },
-      { key: 'examiner', icon: 'pending_actions', tint: '#e8940c', soft: '#fdf4e6', value: aExaminer, label: 'À examiner', sub: "Incidents en attente d'examen", trend: KPI_TRENDS.aExaminer },
-      { key: 'encours', icon: 'sync', tint: '#2b6cb0', soft: '#e8f0f9', value: enCours, label: 'En cours de traitement', sub: 'Incidents nécessitant un suivi', trend: KPI_TRENDS.enCours },
-      { key: 'clotures', icon: 'check_circle', tint: '#1f9d55', soft: '#e9f6ee', value: clotures, label: 'Clôturés', sub: 'Incidents dont le traitement est terminé', trend: KPI_TRENDS.clotures },
+      { key: 'total', icon: 'report', tint: '#dc3a2f', soft: '#fdeeec', value: total, label: 'Total des incidents', sub: 'Sur la période sélectionnée', trend: tendance7j(INCIDENTS) },
+      { key: 'examiner', icon: 'pending_actions', tint: '#e8940c', soft: '#fdf4e6', value: aExaminer, label: 'À examiner', sub: "Incidents en attente d'examen", trend: tendance7j(INCIDENTS, (i) => i.statut === 'nouveau') },
+      { key: 'encours', icon: 'sync', tint: '#2b6cb0', soft: '#e8f0f9', value: enCours, label: 'En cours / validés', sub: 'Pris en charge ou validés techniquement', trend: tendance7j(INCIDENTS, (i) => i.statut === 'en_cours' || i.statut === 'valide') },
+      { key: 'clotures', icon: 'check_circle', tint: '#1f9d55', soft: '#e9f6ee', value: clotures, label: 'Clôturés ou rejetés', sub: 'Traitement terminé (dont faux positifs)', trend: tendance7j(INCIDENTS, (i) => i.statut === 'cloture' || i.statut === 'rejete') },
     ]
-  }, [periodFiltered])
+  }, [periodFiltered, INCIDENTS])
 
   const recents = useMemo(
     () => [...INCIDENTS].sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 4),
-    [],
+    [INCIDENTS],
   )
 
   const listRef = useRef<HTMLDivElement>(null)
@@ -181,9 +197,13 @@ export function IncidentsPage() {
               Gestion des incidents
             </h1>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-body">
-              Consultez et suivez les incidents signalés dans votre région afin de faciliter leur analyse et leur
-              traitement.
+              {user?.role === 'anaser'
+                ? 'Consultez les incidents détectés par les boîtiers dans tout le pays (lecture seule).'
+                : national
+                  ? 'Consultez et traitez les incidents détectés par les boîtiers dans tout le pays.'
+                  : 'Consultez et suivez les incidents signalés dans votre région afin de faciliter leur analyse et leur traitement.'}
             </p>
+            {erreur && <p className="mt-1.5 text-xs font-semibold text-danger-600">{erreur}</p>}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -192,19 +212,17 @@ export function IncidentsPage() {
             Région : {region}
             <span className="ic text-base text-muted">expand_more</span>
           </span>
-          <span className="flex max-w-[280px] items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3.5 py-2.5 text-[11px] font-semibold leading-snug text-brand-700">
-            <span className="ic mt-0.5 flex-none text-base">verified_user</span>
-            Les données affichées concernent uniquement votre périmètre régional.
-          </span>
+          {!national && (
+            <span className="flex max-w-[280px] items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3.5 py-2.5 text-[11px] font-semibold leading-snug text-brand-700">
+              <span className="ic mt-0.5 flex-none text-base">verified_user</span>
+              Les données affichées concernent uniquement votre périmètre régional.
+            </span>
+          )}
         </div>
       </section>
 
-      {/* Données réelles des boîtiers ; le reste de la page est encore en démonstration. */}
       <div className="mx-6 mt-5">
         <IncidentsEnDirect />
-        <p className="m-0 mt-2 text-[11.5px] font-medium text-faint">
-          Les indicateurs, la carte et la liste ci-dessous sont encore des données de démonstration.
-        </p>
       </div>
 
       <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -400,7 +418,7 @@ export function IncidentsPage() {
                   const gMeta = GRAVITE_META[incident.gravite]
                   const sMeta = STATUT_META[incident.statut]
                   const srcMeta = SOURCE_META[incident.source]
-                  const [lat, lng] = offsetLatLng(center, incident.offset)
+                  const { lat, lng } = incident
                   return (
                     <tr key={incident.id} className="border-b border-line-soft last:border-0 hover:bg-page">
                       <td className="px-5 py-3">
@@ -449,9 +467,9 @@ export function IncidentsPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3">
-                        {/* TODO : vue détaillée / modale d'un incident — pas encore construite. */}
                         <button
                           type="button"
+                          onClick={() => setFicheId(incident.api.id)}
                           className="whitespace-nowrap rounded-lg border-[1.5px] border-line px-3 py-1.5 text-[11px] font-bold text-ink hover:bg-page"
                         >
                           Voir les détails
@@ -463,7 +481,7 @@ export function IncidentsPage() {
                 {paginated.length === 0 && (
                   <tr>
                     <td colSpan={9} className="px-5 py-8 text-center text-[12.5px] text-faint">
-                      Aucun incident ne correspond à ces filtres.
+                      {donnees ? 'Aucun incident ne correspond à ces filtres.' : 'Chargement des incidents…'}
                     </td>
                   </tr>
                 )}
@@ -517,15 +535,16 @@ export function IncidentsPage() {
               <p className="m-0 text-sm font-extrabold text-ink">Carte des incidents — {region}</p>
             </div>
             <div className="relative h-[280px] w-full">
-              <MapContainer center={center} zoom={12} className="h-full w-full" scrollWheelZoom={false}>
+              <MapContainer center={center} zoom={national ? 7 : 11} className="h-full w-full" scrollWheelZoom={false}>
                 <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 {filtered.map((incident) => {
                   const meta = GRAVITE_META[incident.gravite]
                   return (
                     <CircleMarker
                       key={incident.id}
-                      center={offsetLatLng(center, incident.offset)}
+                      center={[incident.lat, incident.lng]}
                       radius={8}
+                      eventHandlers={{ click: () => setFicheId(incident.api.id) }}
                       pathOptions={{ color: '#fff', weight: 2, fillColor: meta.color, fillOpacity: 0.92 }}
                     >
                       <Popup>
@@ -560,7 +579,7 @@ export function IncidentsPage() {
 
           <div className="min-w-0 rounded-2xl border border-line bg-white p-5 shadow-card">
             <div className="mb-3.5 flex items-center justify-between">
-              <p className="m-0 text-sm font-extrabold text-ink">Incidents récents dans votre région</p>
+              <p className="m-0 text-sm font-extrabold text-ink">{national ? 'Incidents récents' : 'Incidents récents dans votre région'}</p>
               {/* Déjà sur cette page : "Voir tout" réinitialise les filtres et ramène à la liste complète plutôt que de rediriger vers elle-même. */}
               <button
                 type="button"
@@ -605,6 +624,9 @@ export function IncidentsPage() {
           </div>
         </div>
       </section>
+      {fiche && (
+        <FicheIncident incident={fiche} role={user?.role} onFermer={() => setFicheId(null)} onChange={() => void recharger()} />
+      )}
     </div>
   )
 }

@@ -421,8 +421,50 @@ export interface IncidentApi {
   vitesse_radar: number | null
   vitesse_gps: number | null
   distance_hcsr04: number | null
+  hdop?: number | null
+  nombre_satellites?: number | null
   position_fiable: boolean
   zone: number | null
+}
+
+export type StatutIncidentApi = 'nouveau' | 'en_cours' | 'valide' | 'cloture' | 'rejete'
+
+export interface HistoriqueIncidentApi {
+  id: number
+  statut_precedent_libelle: string
+  statut_nouveau: string
+  statut_nouveau_libelle: string
+  texte: string
+  acteur_nom: string | null
+  role_acteur: string
+  date: string
+}
+
+/**
+ * Incidents les plus récents (périmètre du compte), en suivant la pagination par curseur du
+ * backend (25 par page) jusqu'à `max` incidents.
+ */
+export async function getIncidents(max = 300): Promise<IncidentApi[]> {
+  const resultats: IncidentApi[] = []
+  let chemin: string | null = '/incidents/'
+  while (chemin && resultats.length < max) {
+    const page: { results: IncidentApi[]; next: string | null } = await authorizedFetch(chemin)
+    resultats.push(...page.results)
+    chemin = page.next ? `/incidents/${new URL(page.next).search}` : null
+  }
+  return resultats.slice(0, max)
+}
+
+export function changerStatutIncident(id: number, statut: StatutIncidentApi, commentaire = ''): Promise<IncidentApi> {
+  return authorizedFetch(`/incidents/${id}/statut/`, { method: 'PATCH', body: JSON.stringify({ statut, commentaire }) })
+}
+
+export function ajouterObservationIncident(id: number, texte: string): Promise<unknown> {
+  return authorizedFetch(`/incidents/${id}/observations/`, { method: 'POST', body: JSON.stringify({ texte }) })
+}
+
+export function getHistoriqueIncident(id: number): Promise<HistoriqueIncidentApi[]> {
+  return authorizedFetch(`/incidents/${id}/historique/`)
 }
 
 /** Les 25 incidents les plus récents (pagination par curseur côté backend). */
