@@ -22,6 +22,7 @@
 
 import { INITIAL_BOITIERS, INITIAL_CONDUCTEURS } from '@/data/superAdminBoitiers'
 import { REGION_STATS } from '@/data/superAdminHome'
+import type { BoitierApi } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 
 export type Connexion = 'en_ligne' | 'hors_ligne'
@@ -69,6 +70,8 @@ export interface Monitored {
   /** Intervalle d'émission, en secondes. */
   intervalSec: number
   anomalies: Anomaly[]
+  /** Donnée réelle du backend : les mesures non transmises par le boîtier valent -1. */
+  reel?: boolean
 }
 
 export interface LogEntry {
@@ -244,6 +247,8 @@ export const INITIAL_MONITORED: Monitored[] = build()
  * Un boîtier hors ligne affiche en tête la coupure, puis ses derniers messages.
  */
 export function communicationLog(m: Monitored): LogEntry[] {
+  // Donnée réelle : seul le dernier message est connu, pas d'historique inventé.
+  if (m.reel) return [{ ageSec: m.ageSec, kind: m.connexion === 'hors_ligne' ? 'coupure' : 'recu' }]
   const entries: LogEntry[] = []
   const late = m.anomalies.some((a) => a.kind === 'donnees_retard')
   for (let k = 0; k < 6; k++) {
@@ -251,4 +256,41 @@ export function communicationLog(m: Monitored): LogEntry[] {
   }
   if (m.connexion === 'hors_ligne') entries[0] = { ageSec: m.ageSec, kind: 'coupure' }
   return entries
+}
+
+/**
+ * Boîtier renvoyé par le backend (GET /boitiers/) -> ligne de supervision. Le firmware n'envoie
+ * pas encore batterie, signal ni taux de réception : ces valeurs restent à -1 (« non transmis »),
+ * jamais inventées. Sans position GPS reçue, le boîtier est placé au centre de sa région.
+ */
+export function depuisApi(b: BoitierApi, maintenant: number): Monitored {
+  const ageMs = (iso: string | null) => (iso ? Math.max(0, maintenant - Date.parse(iso)) : Number.POSITIVE_INFINITY)
+  const ageCommunication = ageMs(b.derniere_communication)
+  const ancre = REGION_CENTERS[b.region ?? ''] ?? REGION_CENTERS.dakar
+  const sansPositionRecente = b.en_ligne && ageMs(b.derniere_localisation_maj) > 120_000
+  const anomalies: Anomaly[] = sansPositionRecente
+    ? [{ id: `${b.id}-gps`, boitierId: b.id.slice(0, 8).toUpperCase(), kind: 'gps_perdu', status: 'nouvelle', ageSec: 0 }]
+    : []
+  return {
+    id: b.id.slice(0, 8).toUpperCase(),
+    uuid: b.id,
+    region: b.region ?? '',
+    conducteur: b.conducteur?.nom ?? null,
+    plate: b.numero_immatriculation || null,
+    connexion: b.en_ligne ? 'en_ligne' : 'hors_ligne',
+    technique: anomalies.length ? 'anomalie' : 'normal',
+    reseau: b.dernier_reseau === 'gsm' ? 'GSM' : 'Wi-Fi',
+    ageSec: Number.isFinite(ageCommunication) ? Math.round(ageCommunication / 1000) : 10 * 365 * 86400,
+    lat: b.derniere_latitude ?? ancre[0],
+    lng: b.derniere_longitude ?? ancre[1],
+    vitesse: Math.round(b.derniere_vitesse_gps ?? 0),
+    evenement: b.derniere_latitude == null ? 'En attente du GPS' : 'Position reçue',
+    batterie: -1,
+    signal: -1,
+    latenceMs: b.latence_ms ?? -1,
+    tauxReception: -1,
+    intervalSec: -1,
+    anomalies,
+    reel: true,
+  }
 }

@@ -6,7 +6,7 @@ import { REGION_STATS } from '@/data/superAdminHome'
 import {
   ANOMALY_META,
   ANOMALY_STATUS_META,
-  INITIAL_MONITORED,
+  depuisApi,
   ONLINE_THRESHOLD_SEC,
   communicationLog,
   signalLevel,
@@ -16,6 +16,8 @@ import {
   type Reseau,
   type Technique,
 } from '@/data/superAdminMonitoring'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getBoitiers } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
@@ -46,8 +48,8 @@ const regionName = (slug: string) => REGION_STATS.find((r) => r.slug === slug)?.
 
 const p2 = (n: number) => String(n).padStart(2, '0')
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
@@ -292,17 +294,21 @@ function DetailPanel({ m, anchor, tab, onTab, onBack, onLocate, onCopy }: Detail
               </span>
             </DetailRow>
             <DetailRow label="Qualité du signal">
-              <span className={sig.cls}>{sig.label}</span> <span className="font-medium text-body">({m.signal} dBm)</span>
+              {m.signal < 0 ? <span className="font-medium text-faint">Non transmis</span> : <><span className={sig.cls}>{sig.label}</span> <span className="font-medium text-body">({m.signal} dBm)</span></>}
             </DetailRow>
             <DetailRow label="Dernière communication">{fullDate(anchor, m.ageSec)}</DetailRow>
-            <DetailRow label="Fréquence d'émission">Toutes les {m.intervalSec} s</DetailRow>
-            <DetailRow label="Délai de réception">{fmt(m.latenceMs)} ms</DetailRow>
-            <DetailRow label="Messages reçus (24 h)">{m.tauxReception} %</DetailRow>
+            <DetailRow label="Fréquence d'émission">{m.intervalSec < 0 ? 'Non transmis' : `Toutes les ${m.intervalSec} s`}</DetailRow>
+            <DetailRow label="Délai de réception">{m.latenceMs < 0 ? 'Non transmis' : `${fmt(m.latenceMs)} ms`}</DetailRow>
+            <DetailRow label="Messages reçus (24 h)">{m.tauxReception < 0 ? 'Non transmis' : `${m.tauxReception} %`}</DetailRow>
             <DetailRow label="Batterie">
-              <span className={`inline-flex items-center gap-1 ${batteryTone(m.batterie)}`}>
-                <span className="ic text-base">{m.batterie < 20 ? 'battery_alert' : 'battery_full'}</span>
-                {m.batterie} %
-              </span>
+              {m.batterie < 0 ? (
+                'Non transmis'
+              ) : (
+                <span className={`inline-flex items-center gap-1 ${batteryTone(m.batterie)}`}>
+                  <span className="ic text-base">{m.batterie < 20 ? 'battery_alert' : 'battery_full'}</span>
+                  {m.batterie} %
+                </span>
+              )}
             </DetailRow>
           </div>
 
@@ -425,10 +431,11 @@ interface RowMenu {
 type SortKey = 'id' | 'comm'
 
 export function MonitoringPage() {
-  // TODO backend : remplacer par la supervision en temps réel (WebSocket / SSE).
-  const monitored = INITIAL_MONITORED
-  const [anchor, setAnchor] = useState(() => Date.now())
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Supervision réelle : GET /boitiers/ toutes les 5 s (positions et communications écrites par
+  // l'écoute MQTT du backend). `anchor` = instant de la dernière réponse.
+  const { donnees, erreur, maj: anchor, recharger } = useEnDirect(getBoitiers, 5000)
+  const monitored = useMemo(() => (donnees ?? []).map((b) => depuisApi(b, anchor)), [donnees, anchor])
+  const lastRefresh = formatNow(anchor)
   const [refreshing, setRefreshing] = useState(false)
 
   const [region, setRegion] = useState<'toutes' | string>('toutes')
@@ -599,9 +606,7 @@ export function MonitoringPage() {
   }
 
   const refresh = () => {
-    // TODO backend : recharger l'état de connexion, les dernières communications et les anomalies
-    setAnchor(Date.now())
-    setLastRefresh(formatNow())
+    void recharger()
     setRefreshing(true)
     setToast('Données actualisées.')
   }
@@ -695,7 +700,8 @@ export function MonitoringPage() {
               Actualiser
             </button>
           </div>
-          <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh}</p>
+          <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh} · actualisation automatique toutes les 5 s</p>
+          {erreur && <p className="m-0 text-[11px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
 

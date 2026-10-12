@@ -297,6 +297,64 @@ async function authorizedFetch<T>(path: string, options: RequestInit = {}, retry
 }
 
 // ---------------------------------------------------------------------------
+// Boîtiers et incidents (supervision en direct). Les boîtiers publient en MQTT ; le backend
+// (python manage.py ecouter_mqtt) les enregistre, le frontend les lit ici.
+// ---------------------------------------------------------------------------
+
+export interface BoitierApi {
+  id: string
+  numero_immatriculation: string
+  region: string | null
+  region_libelle: string | null
+  statut: 'actif' | 'inactif' | 'maintenance'
+  statut_libelle: string
+  derniere_latitude: number | null
+  derniere_longitude: number | null
+  derniere_localisation_maj: string | null
+  derniere_vitesse_gps: number | null
+  dernier_hdop: number | null
+  dernier_nombre_satellites: number | null
+  derniere_communication: string | null
+  dernier_reseau: '' | 'wifi' | 'gsm'
+  en_ligne: boolean
+  latence_ms: number | null
+  conducteur: { id: string; nom: string; email: string } | null
+  date_affectation: string | null
+  date_creation: string
+}
+
+/** Tous les boîtiers visibles par le compte connecté (le backend applique le filtre régional). */
+export function getBoitiers(): Promise<BoitierApi[]> {
+  return authorizedFetch<BoitierApi[]>('/boitiers/')
+}
+
+export interface IncidentApi {
+  id: number
+  boitier: string
+  latitude: number
+  longitude: number
+  horodatage: string
+  recu_le: string
+  type_incident: string
+  type_incident_libelle: string
+  niveau_gravite: 'faible' | 'moyen' | 'critique'
+  niveau_gravite_libelle: string
+  statut: string
+  statut_libelle: string
+  vitesse_radar: number | null
+  vitesse_gps: number | null
+  distance_hcsr04: number | null
+  position_fiable: boolean
+  zone: number | null
+}
+
+/** Les 25 incidents les plus récents (pagination par curseur côté backend). */
+export async function getIncidentsRecents(): Promise<IncidentApi[]> {
+  const page = await authorizedFetch<{ results: IncidentApi[] }>('/incidents/')
+  return page.results
+}
+
+// ---------------------------------------------------------------------------
 // Retours officiels ANASER (modèle AlerteAnaser — apps/anaser côté Django).
 // POST réservé au rôle `anaser` côté backend ; les autres méthodes suivent
 // le même schéma REST que le reste de l'API (apps/incidents, apps/zones).

@@ -13,6 +13,7 @@ import {
 } from '@/data/adminIncidents'
 import { daysSince, latestDate } from '@/lib/period'
 import { formatCoords, offsetLatLng, regionCenter, regionLabel } from '@/lib/regions'
+import { IncidentsEnDirect } from '@/components/incidents/IncidentsEnDirect'
 
 const PAGE_SIZE = 8
 
@@ -197,6 +198,14 @@ export function IncidentsPage() {
           </span>
         </div>
       </section>
+
+      {/* Données réelles des boîtiers ; le reste de la page est encore en démonstration. */}
+      <div className="mx-6 mt-5">
+        <IncidentsEnDirect />
+        <p className="m-0 mt-2 text-[11.5px] font-medium text-faint">
+          Les indicateurs, la carte et la liste ci-dessous sont encore des données de démonstration.
+        </p>
+      </div>
 
       <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((kpi) => (
