@@ -472,6 +472,18 @@ export function getTableauDeBord(jours = 30, region?: string): Promise<TableauDe
   return authorizedFetch(`/tableau-de-bord/?${params}`)
 }
 
+/** Résumé du conducteur connecté (GET /conducteur/tableau-de-bord/). */
+export interface TableauDeBordConducteurApi {
+  jours: number
+  boitier: { id: string; immatriculation: string | null; statut: string; derniere_activite: string | null; en_ligne: boolean } | null
+  alertes: { total: number; critiques: number }
+  signalements: { total: number; en_attente: number; valides: number }
+}
+
+export function getTableauDeBordConducteur(jours = 30): Promise<TableauDeBordConducteurApi> {
+  return authorizedFetch(`/conducteur/tableau-de-bord/?jours=${jours}`)
+}
+
 // ---------------------------------------------------------------------------
 // Retours officiels ANASER (modèle AlerteAnaser — apps/anaser côté Django).
 // POST réservé au rôle `anaser` côté backend ; les autres méthodes suivent

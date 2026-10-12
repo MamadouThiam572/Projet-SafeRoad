@@ -1,3 +1,7 @@
+import { ilYa } from '@/data/adminHome'
+import { idAffichage } from '@/data/superAdminBoitiers'
+import type { TableauDeBordConducteurApi } from '@/lib/api'
+
 export interface DashboardKpi {
   icon: string
   tint: string
@@ -73,4 +77,35 @@ export const BOX_STATUS = {
   online: true,
   battery: 78,
   lastSeen: 'il y a 2 min',
+}
+
+/* ------------------------------------------------------------------ */
+/* Données réelles (GET /conducteur/tableau-de-bord/)                  */
+/* ------------------------------------------------------------------ */
+
+const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? 's' : ''}`
+
+/**
+ * Résumé du backend -> indicateurs et état du boîtier de l'accueil. Les kilomètres et trajets
+ * ne sont pas encore transmis par le boîtier : affichés « — », jamais inventés.
+ */
+export function accueilDepuisApi(api: TableauDeBordConducteurApi | null, maintenant = Date.now()) {
+  const alertes = api?.alertes ?? { total: 0, critiques: 0 }
+  const signalements = api?.signalements ?? { total: 0, en_attente: 0, valides: 0 }
+  const kpis: DashboardKpi[] = [
+    { icon: 'notifications_active', tint: '#dc3a2f', soft: '#fdeeec', value: String(alertes.total), label: 'Alertes reçues', note: `Sur les ${api?.jours ?? 30} derniers jours` },
+    { icon: 'route', tint: '#2b6cb0', soft: '#e8f0f9', value: '—', label: 'Kilomètres parcourus', note: 'Bientôt : trajets transmis par le boîtier' },
+    { icon: 'crisis_alert', tint: '#e8940c', soft: '#fdf4e6', value: String(alertes.critiques), label: 'Alertes en zone critique', note: 'Zones reconnues par l\'ANASER' },
+    { icon: 'flag', tint: '#0F766E', soft: '#e7f5f0', value: String(signalements.total), label: 'Signalements envoyés', note: `${pluriel(signalements.valides, 'validé')} · ${signalements.en_attente} en attente` },
+  ]
+  const b = api?.boitier
+  const boitier = b
+    ? {
+        id: idAffichage(b.id),
+        immatriculation: b.immatriculation ?? 'Véhicule non renseigné',
+        online: b.en_ligne,
+        lastSeen: b.derniere_activite ? ilYa(b.derniere_activite, maintenant) : 'Jamais',
+      }
+    : null
+  return { kpis, boitier }
 }

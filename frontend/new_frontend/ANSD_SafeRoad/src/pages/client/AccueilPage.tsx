@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  BOX_STATUS,
-  DASHBOARD_KPIS,
+  accueilDepuisApi,
   DRIVER_POSITION,
   DRIVING_SCORE,
   LIVE_ALERT,
   RADIUS_CHOICES,
   SCORE_ROWS,
 } from '@/data/clientDashboard'
-import { DRIVER_PROFILE, PREF_TOGGLES } from '@/data/clientProfile'
+import { PREF_TOGGLES } from '@/data/clientProfile'
 import { CLIENT_REPORTS } from '@/data/clientReports'
 import { CLIENT_TRIPS } from '@/data/clientTrips'
 import { CLIENT_ZONES, RISK_META } from '@/data/clientZones'
 import { ClientZoneMap, type ClientZoneMapHandle } from '@/components/client/ClientZoneMap'
+import { useAuth } from '@/context/AuthContext'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getTableauDeBordConducteur } from '@/lib/api'
 import { PATHS } from '@/routes/paths'
+
+/** Résumé du conducteur connecté sur 30 jours (son boîtier, ses alertes, ses signalements). */
+const chargerAccueil = () => getTableauDeBordConducteur(30)
 
 function alertBadge(count: number): { label: string; fg: string; bg: string } {
   if (count === 0) return { label: 'Aucune', fg: '#1f9d55', bg: '#e9f6ee' }
@@ -41,6 +46,10 @@ const CIRC = 2 * Math.PI * 15.9
 export function AccueilPage() {
   const navigate = useNavigate()
   const mapRef = useRef<ClientZoneMapHandle>(null)
+  const { user } = useAuth()
+  // Rafraîchi toutes les 15 s : l'état du boîtier suit sa dernière communication.
+  const { donnees, erreur, maj } = useEnDirect(chargerAccueil, 15_000)
+  const { kpis: DASHBOARD_KPIS, boitier } = useMemo(() => accueilDepuisApi(donnees, maj), [donnees, maj])
 
   const [liveAlertVisible, setLiveAlertVisible] = useState(true)
   const [radius, setRadius] = useState<(typeof RADIUS_CHOICES)[number]>(20)
@@ -94,7 +103,7 @@ export function AccueilPage() {
         <div className="grid w-full grid-cols-1 gap-5 p-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
             <h1 className="text-[clamp(24px,3vw,32px)] font-extrabold leading-[1.15] tracking-[-0.026em] text-white">
-              Bonjour {firstName(DRIVER_PROFILE.name)} 👋
+              Bonjour {user?.firstName ? firstName(user.firstName) : 'et bienvenue'} 👋
             </h1>
             <p className="mt-2.5 text-sm leading-relaxed text-[rgba(234,244,248,0.86)]">
               Vos alertes sont actives. Bonne route et prudence sur la RN1.
@@ -106,8 +115,10 @@ export function AccueilPage() {
                 <span className="ic text-[22px]">directions_car</span>
               </span>
               <div>
-                <p className="m-0 text-[15px] font-extrabold text-ink">{DRIVER_PROFILE.plate}</p>
-                <p className="m-0 mt-1.5 text-[11.5px] font-medium text-muted">Boîtier {DRIVER_PROFILE.boxId}</p>
+                <p className="m-0 text-[15px] font-extrabold text-ink">{boitier?.immatriculation ?? 'Aucun boîtier'}</p>
+                <p className="m-0 mt-1.5 text-[11.5px] font-medium text-muted">
+                  {boitier ? `Boîtier ${boitier.id}` : 'Pas encore installé'}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3 border-l border-line px-5 py-4">
@@ -150,6 +161,8 @@ export function AccueilPage() {
           </div>
         </section>
       )}
+
+      {erreur && <p className="mx-6 mt-3 text-xs font-semibold text-danger-600">{erreur}</p>}
 
       <section className="mx-6 mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {DASHBOARD_KPIS.map((kpi) => (
@@ -485,22 +498,29 @@ export function AccueilPage() {
             <div className="flex flex-col gap-3">
               <span className="flex items-center justify-between gap-2.5 text-[12.5px] font-medium text-body">
                 Identifiant
-                <b className="font-extrabold text-ink">{BOX_STATUS.id}</b>
+                <b className="font-extrabold text-ink">{boitier?.id ?? '—'}</b>
               </span>
               <span className="flex items-center justify-between gap-2.5 text-[12.5px] font-medium text-body">
                 Statut
-                <b className="flex items-center gap-2 font-extrabold text-success-600">
-                  <span className="h-2 w-2 rounded-full bg-success-600" />
-                  En ligne
-                </b>
+                {boitier?.online ? (
+                  <b className="flex items-center gap-2 font-extrabold text-success-600">
+                    <span className="h-2 w-2 rounded-full bg-success-600" />
+                    En ligne
+                  </b>
+                ) : (
+                  <b className="flex items-center gap-2 font-extrabold text-faint">
+                    <span className="h-2 w-2 rounded-full bg-faint" />
+                    Hors ligne
+                  </b>
+                )}
               </span>
               <span className="flex items-center justify-between gap-2.5 text-[12.5px] font-medium text-body">
                 Batterie
-                <b className="font-extrabold text-ink">{BOX_STATUS.battery} %</b>
+                <b className="font-extrabold text-ink">Non transmise</b>
               </span>
               <span className="flex items-center justify-between gap-2.5 text-[12.5px] font-medium text-body">
                 Dernière transmission
-                <b className="font-extrabold text-ink">{BOX_STATUS.lastSeen}</b>
+                <b className="font-extrabold text-ink">{boitier?.lastSeen ?? '—'}</b>
               </span>
             </div>
             <button
