@@ -200,6 +200,17 @@ class TableauDeBordTests(TestCase):
         self.assertTrue(regions['dakar']['admin_actif'])
         self.assertFalse(regions['thies']['admin_actif'])
 
+    def test_series_jour_par_jour_de_chaque_region(self):
+        d = self.donnees(self.super_admin, '/api/v1/tableau-de-bord/?jours=7')
+        series = d['series_par_region']
+        self.assertEqual(len(series), 14)
+        self.assertEqual(len(series['dakar']['incidents']), 7)
+        self.assertEqual(series['dakar']['incidents'][-1], 2)  # aujourd'hui
+        self.assertEqual(series['thies']['incidents'][-2], 1)  # hier
+        self.assertEqual(sum(series['dakar']['signalements']), 1)
+        regions = {r['region']: r for r in d['par_region']}
+        self.assertEqual((regions['dakar']['admins_actifs'], regions['thies']['admins_actifs']), (1, 0))
+
     def test_super_admin_peut_filtrer_une_region(self):
         d = self.donnees(self.super_admin, '/api/v1/tableau-de-bord/?region=thies')
         self.assertEqual(d['indicateurs']['incidents']['periode'], 1)

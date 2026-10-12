@@ -193,6 +193,9 @@ class TableauDeBordView(APIView):
         }
         if national:
             donnees['par_region'] = self._par_region(depuis, limite_en_ligne)
+            # Courbes jour par jour de chaque région (mêmes dates que `series`), pour comparer
+            # et filtrer les régions sans rappeler l'API 14 fois.
+            donnees['series_par_region'] = self._series_par_region([j['date'] for j in series], depuis)
         return Response(donnees)
 
     @staticmethod
@@ -218,6 +221,27 @@ class TableauDeBordView(APIView):
         return evenements[:nombre]
 
     @staticmethod
+    def _series_par_region(dates, depuis):
+        def par_region_et_jour(queryset, champ_date, champ_region):
+            lignes = (
+                queryset.filter(**{f'{champ_date}__gte': depuis})
+                .annotate(jour=TruncDate(champ_date)).values(champ_region, 'jour').annotate(n=Count('id'))
+            )
+            return {(ligne[champ_region], ligne['jour']): ligne['n'] for ligne in lignes}
+
+        incidents = par_region_et_jour(Incident.objects.all(), 'horodatage', 'boitier__region')
+        alertes = par_region_et_jour(Alerte.objects.all(), 'date_creation', 'boitier__region')
+        signalements = par_region_et_jour(Signalement.objects.all(), 'date_creation', 'region')
+        return {
+            slug: {
+                'incidents': [incidents.get((slug, jour), 0) for jour in dates],
+                'alertes': [alertes.get((slug, jour), 0) for jour in dates],
+                'signalements': [signalements.get((slug, jour), 0) for jour in dates],
+            }
+            for slug, _ in Region.choices
+        }
+
+    @staticmethod
     def _par_region(depuis, limite_en_ligne):
         boitiers = _compter_par_region(Boitier.objects.all(), 'region')
         affectes = _compter_par_region(Boitier.objects.all(), 'region', Q(conducteur__isnull=False))
@@ -239,9 +263,8 @@ class TableauDeBordView(APIView):
                 Zone.StatutValidation.RECONNUE, Zone.StatutValidation.REJETEE, Zone.StatutValidation.ARCHIVEE,
             ]),
         )
-        regions_avec_admin_actif = set(
-            Administrateur.objects.filter(role=Administrateur.Role.ADMIN, is_active=True)
-            .values_list('region', flat=True)
+        admins_actifs = _compter_par_region(
+            Administrateur.objects.filter(role=Administrateur.Role.ADMIN, is_active=True), 'region',
         )
         return [
             {
@@ -251,7 +274,8 @@ class TableauDeBordView(APIView):
                 'incidents': incidents.get(slug, 0), 'alertes': alertes.get(slug, 0),
                 'signalements': signalements.get(slug, 0), 'signalements_en_attente': signalements_attente.get(slug, 0),
                 'zones_reconnues': zones.get(slug, 0), 'zones_en_attente': zones_attente.get(slug, 0),
-                'admin_actif': slug in regions_avec_admin_actif,
+                'admin_actif': admins_actifs.get(slug, 0) > 0,
+                'admins_actifs': admins_actifs.get(slug, 0),
             }
             for slug, libelle in Region.choices
         ]
