@@ -1,4 +1,7 @@
+from django.utils import timezone
 from rest_framework import serializers
+
+from apps.configuration.models import ConfigurationSysteme
 
 from .models import Boitier, HistoriqueBoitier, HistoriqueSync
 
@@ -7,6 +10,8 @@ class BoitierSerializer(serializers.ModelSerializer):
     statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
     region_libelle = serializers.CharField(source='get_region_display', read_only=True)
     latence_ms = serializers.SerializerMethodField()
+    # Actif et entendu depuis moins de ConfigurationSysteme.delai_hors_ligne_minutes.
+    en_ligne = serializers.SerializerMethodField()
     # Conducteur actuellement équipé (Conducteur.boitier, OneToOne inverse) et date de l'affectation.
     conducteur = serializers.SerializerMethodField()
     date_affectation = serializers.SerializerMethodField()
@@ -18,14 +23,27 @@ class BoitierSerializer(serializers.ModelSerializer):
             'region', 'region_libelle',
             'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
             'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
-            'derniere_position_horodatage', 'latence_ms', 'conducteur', 'date_affectation',
+            'derniere_position_horodatage', 'latence_ms',
+            'derniere_communication', 'dernier_reseau', 'en_ligne',
+            'conducteur', 'date_affectation',
             'statut', 'statut_libelle', 'date_creation', 'date_maj',
         ]
         read_only_fields = [
             'id', 'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
             'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites',
-            'derniere_position_horodatage',
+            'derniere_position_horodatage', 'derniere_communication', 'dernier_reseau',
         ]
+
+    def get_en_ligne(self, obj):
+        # Limite calculée une fois par réponse (une liste de boîtiers = une seule lecture de config).
+        if not hasattr(self, '_limite_en_ligne'):
+            delai = ConfigurationSysteme.instance().delai_hors_ligne_minutes
+            self._limite_en_ligne = timezone.now() - timezone.timedelta(minutes=delai)
+        return (
+            obj.statut == Boitier.Statut.ACTIF
+            and obj.derniere_communication is not None
+            and obj.derniere_communication >= self._limite_en_ligne
+        )
 
     def get_conducteur(self, obj):
         conducteur = getattr(obj, 'conducteur', None)

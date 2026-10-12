@@ -32,6 +32,7 @@ class BoitierAPIKeyAuthentication(BaseAuthentication):
         if boitier.statut != Boitier.Statut.ACTIF:
             raise AuthenticationFailed('Boîtier inactif ou en maintenance.')
 
+        boitier.signaler_communication()
         return (boitier, None)
 
 

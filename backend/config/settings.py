@@ -251,3 +251,24 @@ SMS_BACKEND = config('SMS_BACKEND', default='console')
 ORANGE_SMS_CLIENT_ID = config('ORANGE_SMS_CLIENT_ID', default='')
 ORANGE_SMS_CLIENT_SECRET = config('ORANGE_SMS_CLIENT_SECRET', default='')
 ORANGE_SMS_EXPEDITEUR = config('ORANGE_SMS_EXPEDITEUR', default='')
+
+# Écoute MQTT des boîtiers (python manage.py ecouter_mqtt) : HiveMQ quand le boîtier est en Wi-Fi,
+# Mosquitto quand il passe en GSM (le SIM800L ne gère pas le TLS de HiveMQ). Un broker sans hôte
+# est ignoré. Les identifiants restent dans le .env, jamais dans le code.
+def _broker_mqtt(nom, port, tls):
+    prefixe = f'MQTT_{nom.upper()}'
+    return {
+        'nom': nom,
+        'hote': config(f'{prefixe}_HOTE', default=''),
+        'port': config(f'{prefixe}_PORT', default=port, cast=int),
+        'utilisateur': config(f'{prefixe}_UTILISATEUR', default=''),
+        'mot_de_passe': config(f'{prefixe}_MOT_DE_PASSE', default=''),
+        'tls': config(f'{prefixe}_TLS', default=tls, cast=bool),
+    }
+
+
+MQTT_BROKERS = [_broker_mqtt('hivemq', 8883, True), _broker_mqtt('mosquitto', 1883, False)]
+MQTT_TOPICS = config('MQTT_TOPICS', default='saferoad/data,saferoad/alertes', cast=Csv())
+# Boîtier auquel attribuer les messages sans « boitier_id » (le prototype, tant que le firmware
+# n'envoie pas son identifiant) : son UUID dans le backend.
+MQTT_BOITIER_PAR_DEFAUT = config('MQTT_BOITIER_PAR_DEFAUT', default='')

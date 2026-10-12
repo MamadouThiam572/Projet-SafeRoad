@@ -1,14 +1,19 @@
+import json
+
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.comptes.models import Administrateur
 from apps.conducteurs.models import Conducteur
 from apps.core.regions import Region
+from apps.core.sms import boite_sms
+from apps.incidents.models import Incident
 from apps.zones.models import Zone
 
 from .models import Boitier
+from .mqtt import traiter_message
 from .serializers import BoitierSerializer
 
 LATITUDE_BASE, LONGITUDE_BASE = 14.6928, -17.4467
@@ -701,3 +706,115 @@ class ConfigurationBoitierTests(TestCase):
 
     def test_reservee_aux_boitiers(self):
         self.assertIn(APIClient().get('/api/v1/boitiers/configuration/').status_code, (401, 403))
+
+
+# Message réel du prototype (capture HiveMQ, topic saferoad/data) : GPS sans fix en intérieur,
+# donc ni latitude ni longitude.
+MESSAGE_SANS_GPS = (
+    '{"distance":46.5,"distance_arriere":250.0,"marche_arriere":false,"ax":-1.26,"ay":-2.66,"az":10.09,'
+    '"ax_dynamique":-0.03,"ay_dynamique":-0.18,"az_dynamique":-0.05,"accel_magnitude":0.19,'
+    '"evenement_physique":"Normal","exces_vitesse":"Normal","vitesse_vehicule":0.0,"vitesse_radar":0.0,'
+    '"canal_reseau":"wifi","qualite_gps":"Mauvaise","hdop":25.5,"sd_en_attente":false}'
+)
+
+
+class EcouteMqttTests(TestCase):
+    """Traduction des messages MQTT du firmware : communication, positions espacées, événements
+    validés par le boîtier devenus incidents (sans doublon), excès de vitesse par paliers."""
+
+    def setUp(self):
+        cache.clear()
+        boite_sms.clear()
+        self.boitier = Boitier.objects.create(region='dakar', numero_immatriculation='DK-1234-AB')
+        self.reglages = override_settings(MQTT_BOITIER_PAR_DEFAUT=str(self.boitier.id), SMS_BACKEND='memoire')
+        self.reglages.enable()
+        self.addCleanup(self.reglages.disable)
+
+    def mesure(self, **champs):
+        donnees = json.loads(MESSAGE_SANS_GPS)
+        donnees.update(champs)
+        return traiter_message('saferoad/data', json.dumps(donnees).encode())
+
+    def alerte(self, nom, topic='saferoad/alertes', **champs):
+        return traiter_message(topic, json.dumps({'alerte': nom, 'valeur': 3.2, 'timestamp': 123456, **champs}))
+
+    def test_le_message_reel_sans_gps_signale_la_communication(self):
+        resume = traiter_message('saferoad/data', MESSAGE_SANS_GPS.encode())
+        self.boitier.refresh_from_db()
+        self.assertIsNotNone(self.boitier.derniere_communication)
+        self.assertEqual(self.boitier.dernier_reseau, 'wifi')
+        self.assertIsNone(self.boitier.derniere_latitude)
+        self.assertEqual(resume['incidents'], [])
+        self.assertTrue(BoitierSerializer(self.boitier).data['en_ligne'])
+
+    def test_positions_espacees_de_dix_secondes(self):
+        self.mesure(latitude=14.6928, longitude=-17.4467, satellites=8, hdop=1.1, vitesse_vehicule=42.0)
+        self.mesure(latitude=14.7000, longitude=-17.4000)  # 500 ms plus tard : ignorée
+        self.boitier.refresh_from_db()
+        self.assertEqual((self.boitier.derniere_latitude, self.boitier.dernier_nombre_satellites), (14.6928, 8))
+        self.assertEqual(self.boitier.derniere_vitesse_gps, 42.0)
+
+    def test_une_alerte_devient_un_incident_a_la_derniere_position(self):
+        self.mesure(latitude=14.6928, longitude=-17.4467, satellites=8, hdop=1.1)
+        resume = self.alerte('Freinage', ax_dynamique=-3.2)
+        incident = Incident.objects.get(pk=resume['incidents'][0])
+        self.assertEqual((incident.type_incident, incident.niveau_gravite), ('freinage_brusque', 'moyen'))
+        self.assertEqual((incident.latitude, incident.longitude), (14.6928, -17.4467))
+        self.assertTrue(incident.position_fiable)
+
+    def test_un_evenement_repete_ne_cree_qu_un_incident(self):
+        self.mesure(latitude=14.6928, longitude=-17.4467)
+        for _ in range(3):
+            self.alerte('ObstacleCritique', valeur=32.0)
+        incident = Incident.objects.get()
+        self.assertEqual((incident.type_incident, incident.distance_hcsr04), ('obstacle_critique', 32.0))
+
+    def test_sans_position_connue_l_alerte_est_ignoree(self):
+        self.alerte('SecousseDangereuse')
+        self.assertFalse(Incident.objects.exists())
+
+    def test_une_alerte_rejouee_depuis_la_carte_sd_sur_le_topic_data(self):
+        self.mesure(latitude=14.6928, longitude=-17.4467)
+        self.alerte('RouteDefectueuse', topic='saferoad/data')
+        self.assertEqual(Incident.objects.get().type_incident, 'route_degradee')
+
+    def test_exces_de_vitesse_par_paliers(self):
+        self.mesure(latitude=14.6928, longitude=-17.4467, exces_vitesse='ExcesUrbain')
+        self.mesure(exces_vitesse='ExcesUrbain')  # même palier : rien de plus
+        self.mesure(exces_vitesse='Normal')
+        self.mesure(exces_vitesse='GrandExces')
+        self.mesure(exces_vitesse='Normal')
+        self.mesure(exces_vitesse='GrandExces')  # même palier dans les 30 s : pas de doublon
+        gravites = list(Incident.objects.order_by('id').values_list('type_incident', 'niveau_gravite'))
+        # L'aggravation (petit puis grand excès) crée bien un second incident, plus grave.
+        self.assertEqual(gravites, [('exces_vitesse', 'faible'), ('exces_vitesse', 'moyen')])
+
+    def test_un_accident_declenche_l_urgence(self):
+        Administrateur.objects.create_user(
+            email='dakar-mqtt@test.sn', password='x', nom='D', prenom='D', telephone='+221771112233',
+            role=Administrateur.Role.ADMIN, region='dakar',
+        )
+        self.mesure(latitude=14.6928, longitude=-17.4467)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.alerte('Accident', vitesse_radar=48.0)
+        self.assertEqual([numero for numero, _ in boite_sms], ['+221771112233'])
+
+    def test_une_secousse_dangereuse_ne_declenche_jamais_l_urgence(self):
+        self.mesure(latitude=14.6928, longitude=-17.4467)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.alerte('SecousseDangereuse')
+        self.assertEqual(boite_sms, [])
+
+    def test_messages_ignores_sans_planter(self):
+        self.assertIsNone(traiter_message('saferoad/data', b'pas du json'))
+        self.assertIsNone(traiter_message('saferoad/data', json.dumps({'boitier_id': 'inconnu'})))
+        Boitier.objects.filter(pk=self.boitier.pk).update(statut=Boitier.Statut.INACTIF)
+        self.assertIsNone(traiter_message('saferoad/data', MESSAGE_SANS_GPS))
+        self.assertEqual(self.alerte('EvenementInconnu'), None)
+
+    def test_le_boitier_id_du_message_prime_sur_le_boitier_par_defaut(self):
+        autre = Boitier.objects.create(region='thies')
+        resume = traiter_message('saferoad/data', json.dumps({'boitier_id': str(autre.id), 'canal_reseau': 'gsm'}))
+        self.assertEqual(resume['boitier'], str(autre.id))
+        autre.refresh_from_db()
+        self.assertEqual(autre.dernier_reseau, 'gsm')

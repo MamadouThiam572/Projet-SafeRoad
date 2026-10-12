@@ -140,9 +140,9 @@ class TableauDeBordTests(TestCase):
             email='anaser-tdb@test.sn', password='x', nom='Diallo', prenom='Assane', role=Administrateur.Role.ANASER,
         )
         maintenant = timezone.now()
-        cls.boitier_dakar = Boitier.objects.create(region='dakar', derniere_localisation_maj=maintenant)
+        cls.boitier_dakar = Boitier.objects.create(region='dakar', derniere_communication=maintenant)
         cls.boitier_thies = Boitier.objects.create(
-            region='thies', derniere_localisation_maj=maintenant - timedelta(hours=2),
+            region='thies', derniere_communication=maintenant - timedelta(hours=2),
         )
         cls.conducteur = Conducteur.objects.create_user(
             email='awa-tdb@test.sn', password='x', nom='Ba', prenom='Awa', boitier=cls.boitier_dakar,

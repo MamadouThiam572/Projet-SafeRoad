@@ -125,7 +125,7 @@ class TableauDeBordView(APIView):
             'boitiers': boitiers.aggregate(
                 total=Count('id'),
                 actifs=Count('id', filter=Q(statut=Boitier.Statut.ACTIF)),
-                en_ligne=Count('id', filter=Q(statut=Boitier.Statut.ACTIF, derniere_localisation_maj__gte=limite_en_ligne)),
+                en_ligne=Count('id', filter=Q(statut=Boitier.Statut.ACTIF, derniere_communication__gte=limite_en_ligne)),
                 affectes=Count('id', filter=Q(conducteur__isnull=False)),
             ),
             'incidents': compte_incidents,
@@ -223,7 +223,7 @@ class TableauDeBordView(APIView):
         affectes = _compter_par_region(Boitier.objects.all(), 'region', Q(conducteur__isnull=False))
         hors_ligne = _compter_par_region(
             Boitier.objects.all(), 'region',
-            Q(statut=Boitier.Statut.ACTIF, derniere_localisation_maj__lt=limite_en_ligne),
+            Q(statut=Boitier.Statut.ACTIF, derniere_communication__lt=limite_en_ligne),
         )
         incidents = _compter_par_region(Incident.objects.filter(horodatage__gte=depuis), 'boitier__region')
         alertes = _compter_par_region(Alerte.objects.filter(date_creation__gte=depuis), 'boitier__region')
@@ -276,7 +276,7 @@ class TableauDeBordConducteurView(APIView):
             'jours': jours,
             'boitier': {
                 'id': str(boitier.id), 'immatriculation': boitier.numero_immatriculation or None,
-                'statut': boitier.statut, 'derniere_activite': boitier.derniere_localisation_maj,
+                'statut': boitier.statut, 'derniere_activite': boitier.derniere_communication,
             } if boitier else None,
             'alertes': alertes.aggregate(
                 total=Count('id'),

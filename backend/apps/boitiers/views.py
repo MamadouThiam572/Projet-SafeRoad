@@ -53,6 +53,70 @@ def _zones_validees_actives():
     return zones
 
 
+def enregistrer_position(boitier, latitude, longitude, vitesse_gps=None, hdop=None, nombre_satellites=None,
+                         horodatage=None):
+    """Enregistre la dernière position d'un boîtier et décide s'il approche d'une zone à risque
+    reconnue (alerte de proximité, avec ses canaux LED / buzzer / audio). Partagé par la route
+    HTTP /boitiers/position/ et par l'écoute MQTT ; renvoie la réponse destinée au boîtier."""
+    maintenant = timezone.now()
+    # Un module GPS sans fix peut renvoyer une date fantaisiste (année 2080, etc.) : une date
+    # dans le futur n'est pas gardée, plutôt que de fausser la latence affichée.
+    if horodatage and horodatage > maintenant + timezone.timedelta(minutes=DERIVE_HORLOGE_TOLEREE_MINUTES):
+        horodatage = None
+    boitier.derniere_latitude = latitude
+    boitier.derniere_longitude = longitude
+    boitier.derniere_localisation_maj = maintenant
+    boitier.derniere_position_horodatage = horodatage
+    boitier.derniere_vitesse_gps = vitesse_gps
+    boitier.dernier_hdop = hdop
+    boitier.dernier_nombre_satellites = nombre_satellites
+    boitier.save(update_fields=[
+        'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
+        'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites', 'derniere_position_horodatage',
+    ])
+
+    config = ConfigurationSysteme.instance()
+    position_boitier = (latitude, longitude)
+    zone_proche = None
+    distance_min = None
+
+    delta_latitude, delta_longitude = boite_englobante(latitude, longitude, config.rayon_alerte_proximite_metres)
+    candidats = [
+        zone for zone in _zones_validees_actives()
+        if abs(zone.latitude_centre - latitude) <= delta_latitude
+        and abs(zone.longitude_centre - longitude) <= delta_longitude
+    ]
+    for zone in candidats:
+        distance_metres = geodesic(position_boitier, (zone.latitude_centre, zone.longitude_centre)).meters
+        if distance_metres <= config.rayon_alerte_proximite_metres:
+            if zone_proche is None or distance_metres < distance_min:
+                zone_proche = zone
+                distance_min = distance_metres
+
+    alerte_proximite = False
+    canaux = determiner_canaux_alerte(zone_proche.niveau_danger if zone_proche else None)
+    if zone_proche is not None:
+        cooldown_debut = maintenant - timezone.timedelta(minutes=config.cooldown_alerte_proximite_minutes)
+        deja_notifiee_recemment = AlerteProximite.objects.filter(
+            boitier=boitier, zone=zone_proche, date_creation__gte=cooldown_debut,
+        ).exists()
+        if not deja_notifiee_recemment:
+            AlerteProximite.objects.create(
+                boitier=boitier, conducteur=getattr(boitier, 'conducteur', None),
+                zone=zone_proche, distance_metres=distance_min,
+                latitude=latitude, longitude=longitude, **canaux,
+            )
+            alerte_proximite = True
+
+    return {
+        'alerte_proximite': alerte_proximite,
+        'zone': str(zone_proche.id) if zone_proche else None,
+        'distance_metres': distance_min,
+        'niveau_danger': zone_proche.niveau_danger if zone_proche else None,
+        **canaux,
+    }
+
+
 def _tracer(boitier, evenement, acteur, conducteur=None, commentaire=''):
     HistoriqueBoitier.objects.create(
         boitier=boitier, evenement=evenement, conducteur=conducteur, acteur=acteur,
@@ -222,67 +286,6 @@ class BoitierViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], permission_classes=[EstBoitier])
     def position(self, request):
-        boitier = request.user
         serializer = PositionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        latitude = serializer.validated_data['latitude']
-        longitude = serializer.validated_data['longitude']
-
-        boitier.derniere_latitude = latitude
-        boitier.derniere_longitude = longitude
-        maintenant = timezone.now()
-        boitier.derniere_localisation_maj = maintenant
-        horodatage = serializer.validated_data.get('horodatage')
-        # Un module GPS sans fix peut renvoyer une date fantaisiste (année 2080, etc.) : une date
-        # dans le futur n'est pas gardée, plutôt que de fausser la latence affichée.
-        if horodatage and horodatage > maintenant + timezone.timedelta(minutes=DERIVE_HORLOGE_TOLEREE_MINUTES):
-            horodatage = None
-        boitier.derniere_position_horodatage = horodatage
-        boitier.derniere_vitesse_gps = serializer.validated_data.get('vitesse_gps')
-        boitier.dernier_hdop = serializer.validated_data.get('hdop')
-        boitier.dernier_nombre_satellites = serializer.validated_data.get('nombre_satellites')
-        boitier.save(update_fields=[
-            'derniere_latitude', 'derniere_longitude', 'derniere_localisation_maj',
-            'derniere_vitesse_gps', 'dernier_hdop', 'dernier_nombre_satellites', 'derniere_position_horodatage',
-        ])
-
-        config = ConfigurationSysteme.instance()
-        position_boitier = (latitude, longitude)
-        zone_proche = None
-        distance_min = None
-
-        delta_latitude, delta_longitude = boite_englobante(latitude, longitude, config.rayon_alerte_proximite_metres)
-        candidats = [
-            zone for zone in _zones_validees_actives()
-            if abs(zone.latitude_centre - latitude) <= delta_latitude
-            and abs(zone.longitude_centre - longitude) <= delta_longitude
-        ]
-        for zone in candidats:
-            distance_metres = geodesic(position_boitier, (zone.latitude_centre, zone.longitude_centre)).meters
-            if distance_metres <= config.rayon_alerte_proximite_metres:
-                if zone_proche is None or distance_metres < distance_min:
-                    zone_proche = zone
-                    distance_min = distance_metres
-
-        alerte_proximite = False
-        canaux = determiner_canaux_alerte(zone_proche.niveau_danger if zone_proche else None)
-        if zone_proche is not None:
-            cooldown_debut = timezone.now() - timezone.timedelta(minutes=config.cooldown_alerte_proximite_minutes)
-            deja_notifiee_recemment = AlerteProximite.objects.filter(
-                boitier=boitier, zone=zone_proche, date_creation__gte=cooldown_debut,
-            ).exists()
-            if not deja_notifiee_recemment:
-                AlerteProximite.objects.create(
-                    boitier=boitier, conducteur=getattr(boitier, 'conducteur', None),
-                    zone=zone_proche, distance_metres=distance_min,
-                    latitude=latitude, longitude=longitude, **canaux,
-                )
-                alerte_proximite = True
-
-        return Response({
-            'alerte_proximite': alerte_proximite,
-            'zone': str(zone_proche.id) if zone_proche else None,
-            'distance_metres': distance_min,
-            'niveau_danger': zone_proche.niveau_danger if zone_proche else None,
-            **canaux,
-        })
+        return Response(enregistrer_position(request.user, **serializer.validated_data))

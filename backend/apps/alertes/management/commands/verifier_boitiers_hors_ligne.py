@@ -18,7 +18,7 @@ class Command(BaseCommand):
         delai = ConfigurationSysteme.instance().delai_hors_ligne_minutes
         limite = timezone.now() - timezone.timedelta(minutes=delai)
         silencieux = Boitier.objects.filter(
-            statut=Boitier.Statut.ACTIF, derniere_localisation_maj__lt=limite,
+            statut=Boitier.Statut.ACTIF, derniere_communication__lt=limite,
         ).exclude(
             alertes__motif=Alerte.Motif.HORS_LIGNE,
             alertes__statut__in=[Alerte.Statut.NOUVELLE, Alerte.Statut.EN_COURS],

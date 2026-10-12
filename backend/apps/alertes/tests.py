@@ -295,13 +295,13 @@ class AlerteSourcesTests(TestCase):
 
     def test_boitier_hors_ligne(self):
         silencieux = Boitier.objects.create(
-            region='dakar', derniere_localisation_maj=timezone.now() - timezone.timedelta(minutes=45),
+            region='dakar', derniere_communication=timezone.now() - timezone.timedelta(minutes=45),
         )
-        Boitier.objects.create(region='dakar', derniere_localisation_maj=timezone.now())  # actif récemment
+        Boitier.objects.create(region='dakar', derniere_communication=timezone.now())  # actif récemment
         Boitier.objects.create(region='dakar')  # n'a encore jamais émis
         Boitier.objects.create(  # arrêté volontairement : pas d'alerte
             region='dakar', statut=Boitier.Statut.INACTIF,
-            derniere_localisation_maj=timezone.now() - timezone.timedelta(hours=5),
+            derniere_communication=timezone.now() - timezone.timedelta(hours=5),
         )
 
         call_command('verifier_boitiers_hors_ligne', stdout=StringIO())

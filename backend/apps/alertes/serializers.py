@@ -36,7 +36,7 @@ class AlerteSerializer(serializers.ModelSerializer):
 
     def get_description(self, obj):
         if obj.motif == Alerte.Motif.HORS_LIGNE:
-            derniere = obj.boitier.derniere_localisation_maj if obj.boitier else None
+            derniere = obj.boitier.derniere_communication if obj.boitier else None
             if derniere is None:
                 return "Aucune donnée reçue de ce boîtier."
             minutes = int((timezone.now() - derniere).total_seconds() // 60)

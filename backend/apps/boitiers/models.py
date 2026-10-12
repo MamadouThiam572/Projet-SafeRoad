@@ -37,6 +37,10 @@ class Boitier(models.Model):
     derniere_latitude = models.FloatField(null=True, blank=True)
     derniere_longitude = models.FloatField(null=True, blank=True)
     derniere_localisation_maj = models.DateTimeField(null=True, blank=True)
+    # Dernier message reçu du boîtier, quel qu'il soit (position, incident, configuration, MQTT) :
+    # un boîtier sans fix GPS (en intérieur) communique quand même et n'est pas « hors ligne ».
+    derniere_communication = models.DateTimeField(null=True, blank=True)
+    dernier_reseau = models.CharField(max_length=10, blank=True, help_text="wifi ou gsm, déclaré par le boîtier")
     # Dernières données du module GPS reçues avec la position (supervision / Monitoring).
     derniere_vitesse_gps = models.FloatField(null=True, blank=True, help_text="km/h")
     dernier_hdop = models.FloatField(null=True, blank=True)
@@ -47,6 +51,25 @@ class Boitier(models.Model):
     statut = models.CharField(max_length=15, choices=Statut.choices, default=Statut.ACTIF)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_maj = models.DateTimeField(auto_now=True)
+
+    # Une écriture en base au plus toutes les N secondes : le boîtier peut parler deux fois par seconde.
+    INTERVALLE_MAJ_COMMUNICATION_SECONDES = 30
+
+    def signaler_communication(self, reseau=''):
+        """Note qu'un message vient d'arriver de ce boîtier (et par quel réseau)."""
+        maintenant = timezone.now()
+        recent = (
+            self.derniere_communication is not None
+            and (maintenant - self.derniere_communication).total_seconds() < self.INTERVALLE_MAJ_COMMUNICATION_SECONDES
+        )
+        if recent and (not reseau or reseau == self.dernier_reseau):
+            return
+        self.derniere_communication = maintenant
+        if reseau:
+            self.dernier_reseau = reseau
+        Boitier.objects.filter(pk=self.pk).update(
+            derniere_communication=self.derniere_communication, dernier_reseau=self.dernier_reseau,
+        )
 
     def set_api_key(self, api_key_en_clair):
         self.api_key_hash = make_password(api_key_en_clair)
