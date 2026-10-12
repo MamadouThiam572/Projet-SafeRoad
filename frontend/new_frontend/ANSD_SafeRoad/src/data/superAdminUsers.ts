@@ -1,3 +1,5 @@
+import type { AdministrateurApi } from '@/lib/api'
+
 /**
  * Comptes administratifs que le Super Admin peut administrer (page Super Admin →
  * Utilisateurs) : Administrateurs régionaux (rôle `sous_admin` côté API) et ANASER.
@@ -87,3 +89,30 @@ export const INITIAL_STAFF_USERS: StaffUser[] = SEEDS.map(
 export const REGIONS_WITH_INACTIVE_ADMIN: ReadonlySet<string> = new Set(
   INITIAL_STAFF_USERS.filter((u) => u.role === 'sous_admin' && u.status === 'inactif' && u.region).map((u) => u.region as string),
 )
+
+/** Date ISO du backend -> AAAA-MM-JJTHH:mm en heure locale (format attendu par la page). */
+function isoLocal(iso: string): string {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/**
+ * Compte du backend -> ligne de la page. Les super admins ne sont pas gérés ici (null), comme
+ * le compte connecté. Le rôle `admin` du backend s'appelle `sous_admin` côté frontend.
+ */
+export function staffDepuisApi(a: AdministrateurApi): StaffUser | null {
+  if (a.role === 'super_admin') return null
+  return {
+    id: String(a.id),
+    firstName: a.prenom,
+    lastName: a.nom,
+    email: a.email,
+    phone: a.telephone,
+    role: a.role === 'anaser' ? 'anaser' : 'sous_admin',
+    region: a.role === 'anaser' ? null : a.region,
+    status: a.is_active ? 'actif' : 'inactif',
+    createdAt: isoLocal(a.date_creation),
+    lastLogin: a.derniere_connexion ? isoLocal(a.derniere_connexion) : undefined,
+  }
+}

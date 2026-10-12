@@ -1,19 +1,29 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { REGION_STATS } from '@/data/superAdminHome'
 import {
-  INITIAL_STAFF_USERS,
   ROLE_META,
   ROLE_ORDER,
+  staffDepuisApi,
   type StaffRole,
   type StaffUser,
   type UserStatus,
 } from '@/data/superAdminUsers'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import {
+  ApiError,
+  creerAdministrateur,
+  envoyerLienAdministrateur,
+  getAdministrateurs,
+  modifierAdministrateur,
+} from '@/lib/api'
 
 /**
- * Super Admin → Utilisateurs : gestion des comptes de gestion (Super Admin,
- * Administrateurs régionaux, ANASER). Données de démonstration : chaque
- * mutation locale est marquée // TODO backend.
+ * Super Admin → Utilisateurs : gestion des comptes Administrateurs régionaux et ANASER
+ * (données du backend). Création sans mot de passe = invitation par e-mail ; pas de
+ * suppression, un compte se désactive (il garde la trace de ses décisions).
  */
+
+const messageErreurApi = (err: unknown) => (err instanceof ApiError ? err.message : 'Serveur injoignable : action non enregistrée.')
 
 const PAGE_SIZE = 8
 
@@ -45,8 +55,11 @@ function nowIso(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-function formatNow(): string {
-  return formatDate(nowIso())
+function formatNow(instant?: number): string {
+  if (instant === undefined) return formatDate(nowIso())
+  const d = new Date(instant)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 const fullName = (u: StaffUser) => `${u.firstName} ${u.lastName}`
@@ -113,11 +126,13 @@ function UserForm({
   users,
   onSubmit,
   onClose,
+  busy = false,
 }: {
   initial: StaffUser | null
   users: StaffUser[]
   onSubmit: (values: FormValues) => void
   onClose: () => void
+  busy?: boolean
 }) {
   const [v, setV] = useState<FormValues>({
     firstName: initial?.firstName ?? '',
@@ -269,8 +284,8 @@ function UserForm({
           >
             Annuler
           </button>
-          <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-brand-700">
-            {initial ? 'Enregistrer' : "Créer l'utilisateur"}
+          <button type="submit" disabled={busy} className="rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-brand-700 disabled:opacity-60">
+            {busy ? 'Envoi…' : initial ? 'Enregistrer' : "Créer et envoyer l'invitation"}
           </button>
         </div>
       </form>
@@ -297,8 +312,18 @@ interface Confirm {
 }
 
 export function UtilisateursPage() {
-  const [users, setUsers] = useState<StaffUser[]>(INITIAL_STAFF_USERS)
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Comptes réels, rechargés toutes les 60 s et après chaque action.
+  const { donnees, erreur, maj, recharger } = useEnDirect(getAdministrateurs, 60_000)
+  const users = useMemo(
+    () =>
+      (donnees ?? [])
+        .map(staffDepuisApi)
+        .filter((u): u is StaffUser => u !== null)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [donnees],
+  )
+  const lastRefresh = formatNow(maj)
+  const [envoi, setEnvoi] = useState(false)
 
   const [region, setRegion] = useState<'toutes' | string>('toutes')
   const [search, setSearch] = useState('')
@@ -429,9 +454,16 @@ export function UtilisateursPage() {
     setMenu({ id, top: rect.bottom + 4, right: window.innerWidth - rect.right, up: window.innerHeight - rect.bottom < 230 })
   }
 
-  const applyStatus = (ids: string[], status: UserStatus) => {
-    // TODO backend : PATCH du statut (activation / désactivation) pour chaque compte
-    setUsers((prev) => prev.map((u) => (ids.includes(u.id) ? { ...u, status } : u)))
+  /** PATCH is_active de chaque compte ; message de succès seulement si tout est passé. */
+  const applyStatus = async (ids: string[], status: UserStatus, succes: string) => {
+    try {
+      await Promise.all(ids.map((id) => modifierAdministrateur(id, { is_active: status === 'actif' })))
+      setToast(succes)
+    } catch (err) {
+      setToast(messageErreurApi(err))
+    } finally {
+      void recharger()
+    }
   }
 
   const setStatusFor = (u: StaffUser, status: UserStatus) => {
@@ -440,14 +472,10 @@ export function UtilisateursPage() {
         title: 'Désactiver ce compte ?',
         text: `${fullName(u)} ne pourra plus se connecter à SafeRoad tant que son compte ne sera pas réactivé.`,
         cta: 'Désactiver',
-        onConfirm: () => {
-          applyStatus([u.id], 'inactif')
-          setToast(`Compte de ${fullName(u)} désactivé.`)
-        },
+        onConfirm: () => void applyStatus([u.id], 'inactif', `Compte de ${fullName(u)} désactivé.`),
       })
     } else {
-      applyStatus([u.id], 'actif')
-      setToast(`Compte de ${fullName(u)} réactivé.`)
+      void applyStatus([u.id], 'actif', `Compte de ${fullName(u)} réactivé.`)
     }
   }
 
@@ -458,12 +486,12 @@ export function UtilisateursPage() {
       return
     }
     const run = () => {
-      applyStatus(
+      void applyStatus(
         targets.map((u) => u.id),
         status,
+        `${targets.length} compte${targets.length > 1 ? 's' : ''} ${status === 'actif' ? 'réactivé' : 'désactivé'}${targets.length > 1 ? 's' : ''}.`,
       )
       setSelected(new Set())
-      setToast(`${targets.length} compte${targets.length > 1 ? 's' : ''} ${status === 'actif' ? 'réactivé' : 'désactivé'}${targets.length > 1 ? 's' : ''}.`)
     }
     if (status === 'inactif') {
       setConfirm({
@@ -475,12 +503,15 @@ export function UtilisateursPage() {
     } else run()
   }
 
-  const resetPassword = (u: StaffUser) => {
-    // TODO backend : déclencher l'envoi du lien de réinitialisation du mot de passe
-    setToast(`Un lien de réinitialisation sera envoyé à ${u.email}.`)
+  const resetPassword = async (u: StaffUser) => {
+    try {
+      setToast((await envoyerLienAdministrateur(u.id)).detail)
+    } catch (err) {
+      setToast(messageErreurApi(err))
+    }
   }
 
-  const submitForm = (values: FormValues) => {
+  const submitForm = async (values: FormValues) => {
     const base = {
       firstName: values.firstName.trim(),
       lastName: values.lastName.trim(),
@@ -490,15 +521,30 @@ export function UtilisateursPage() {
       // Les comptes ANASER ont une portée nationale : jamais de région.
       region: values.role === 'anaser' ? null : values.region || null,
     }
+    const saisie = {
+      prenom: base.firstName,
+      nom: base.lastName,
+      email: base.email,
+      telephone: base.phone,
+      role: base.role === 'anaser' ? ('anaser' as const) : ('admin' as const),
+      region: base.region,
+    }
+    setEnvoi(true)
+    try {
+      if (editUser) await modifierAdministrateur(editUser.id, saisie)
+      else await creerAdministrateur(saisie)
+    } catch (err) {
+      // Le formulaire reste ouvert : la personne corrige (e-mail déjà utilisé, région…).
+      setToast(messageErreurApi(err))
+      setEnvoi(false)
+      return
+    }
+    setEnvoi(false)
+    void recharger()
     if (editUser) {
-      // TODO backend : PATCH des informations du compte
-      setUsers((prev) => prev.map((u) => (u.id === editUser.id ? { ...u, ...base } : u)))
       setToast(`Compte de ${base.firstName} ${base.lastName} mis à jour.`)
     } else {
-      // TODO backend : POST de création du compte (+ envoi de l'email d'invitation)
-      const created: StaffUser = { id: `usr-${Date.now()}`, ...base, status: 'actif', createdAt: nowIso() }
-      setUsers((prev) => [...prev, created])
-      setToast(`Compte créé pour ${base.firstName} ${base.lastName}.`)
+      setToast(`Compte créé : une invitation à choisir son mot de passe a été envoyée à ${base.email}.`)
       // La liste est triée par date de création : on affiche la dernière page, où le nouveau compte apparaît.
       const lastPage = Math.ceil((users.length + 1) / PAGE_SIZE)
       if (hasFilters) {
@@ -583,8 +629,7 @@ export function UtilisateursPage() {
             <button
               type="button"
               onClick={() => {
-                // TODO backend : recharger la liste et les compteurs
-                setLastRefresh(formatNow())
+                void recharger()
                 setToast('Liste actualisée.')
               }}
               className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl border border-line bg-white px-5 py-3.5 text-[13px] font-bold text-ink shadow-card transition-colors hover:bg-page"
@@ -594,6 +639,7 @@ export function UtilisateursPage() {
             </button>
           </div>
           <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh}</p>
+          {erreur && <p className="m-0 text-[10.5px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
 
@@ -969,7 +1015,7 @@ export function UtilisateursPage() {
       )}
 
       {/* Formulaire création / modification */}
-      {form && <UserForm initial={editUser} users={users} onSubmit={submitForm} onClose={() => setForm(null)} />}
+      {form && <UserForm initial={editUser} users={users} onSubmit={(v) => void submitForm(v)} onClose={() => setForm(null)} busy={envoi} />}
 
       {/* Confirmation */}
       {confirm && (

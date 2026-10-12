@@ -613,6 +613,42 @@ export async function chargerPhotoSignalement(url: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Comptes du personnel (super admin uniquement). Pas de mot de passe à la création : la
+// personne reçoit une invitation par e-mail. Pas de suppression : on désactive le compte.
+// ---------------------------------------------------------------------------
+
+export interface AdministrateurApi {
+  id: string | number
+  email: string
+  nom: string
+  prenom: string
+  telephone: string
+  role: 'admin' | 'super_admin' | 'anaser'
+  region: string | null
+  is_active: boolean
+  derniere_connexion: string | null
+  date_creation: string
+}
+
+export type AdministrateurSaisie = Pick<AdministrateurApi, 'email' | 'nom' | 'prenom' | 'telephone' | 'role' | 'region'>
+
+export function getAdministrateurs(): Promise<AdministrateurApi[]> {
+  return authorizedFetch('/administrateurs/')
+}
+
+export function creerAdministrateur(donnees: AdministrateurSaisie): Promise<AdministrateurApi> {
+  return authorizedFetch('/administrateurs/', { method: 'POST', body: JSON.stringify(donnees) })
+}
+
+export function modifierAdministrateur(id: string, donnees: Partial<AdministrateurSaisie & { is_active: boolean }>): Promise<AdministrateurApi> {
+  return authorizedFetch(`/administrateurs/${id}/`, { method: 'PATCH', body: JSON.stringify(donnees) })
+}
+
+export function envoyerLienAdministrateur(id: string): Promise<{ detail: string }> {
+  return authorizedFetch(`/administrateurs/${id}/reinitialiser-mot-de-passe/`, { method: 'POST' })
+}
+
+// ---------------------------------------------------------------------------
 // Tableaux de bord (GET /tableau-de-bord/) : chiffres calculés en direct par le backend, selon
 // le rôle (admin régional = sa région ; super admin et ANASER = national + détail par région).
 // ---------------------------------------------------------------------------
