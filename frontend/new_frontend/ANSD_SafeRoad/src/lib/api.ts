@@ -459,8 +459,8 @@ export interface TableauDeBordApi {
   }
   series: SerieJourApi[]
   repartition_incidents: { type: string; libelle: string; nombre: number; pourcentage: number }[]
-  zones_a_valider: { id: number; nom: string; niveau_danger: string; statut_validation: string; region: string | null; nombre_incidents: number; date_creation: string }[]
-  zones_plus_dangereuses: { id: number; nom: string; niveau_danger: string; region: string | null; nombre_incidents: number; nombre_signalements: number; score_danger: number }[]
+  zones_a_valider: { id: number; nom: string; niveau_danger: string; statut_validation: string; region: string | null; nombre_incidents: number; date_creation: string; latitude: number; longitude: number }[]
+  zones_plus_dangereuses: { id: number; nom: string; niveau_danger: string; region: string | null; nombre_incidents: number; nombre_signalements: number; score_danger: number; latitude: number; longitude: number; date_maj: string }[]
   activite_recente: ActiviteApi[]
   par_region?: RegionTableauApi[]
   series_par_region?: Record<string, { incidents: number[]; alertes: number[]; signalements: number[] }>

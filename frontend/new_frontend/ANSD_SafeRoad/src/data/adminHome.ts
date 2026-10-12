@@ -1,3 +1,5 @@
+import type { ActiviteApi, TableauDeBordApi } from '@/lib/api'
+import { regionLabel } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
 export type RiskLevel = 'critique' | 'vigilance' | 'normale'
@@ -88,6 +90,8 @@ export const ADMIN_EVENTS: AdminEvent[] = [
 export interface AdminZone {
   id: string
   name: string
+  /** Signalements citoyens rattachés à la zone (données réelles). */
+  signalements?: number
   /** Delta [lat, lng] en degrés par rapport au centre de la région connectée (src/lib/regions.ts). */
   offset: [number, number]
   incidents: number
@@ -133,7 +137,7 @@ export const TOP_LOCALITIES: TopLocality[] = [
 export interface PendingZone {
   id: string
   name: string
-  level: 'critique' | 'vigilance'
+  level: RiskLevel
   detectedAt: string
 }
 
@@ -149,6 +153,8 @@ export interface DayStat {
   incidents: number
   alertes: number
   zones: number
+  /** Signalements citoyens du jour (données réelles). */
+  signalements?: number
 }
 
 /** Série des 7 derniers jours — alimente le graphique à bascule Incidents / Alertes / Zones. */
@@ -178,3 +184,112 @@ export const INCIDENT_BREAKDOWN: IncidentBreakdown[] = [
 ]
 
 export const INCIDENT_TOTAL = 45
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /tableau-de-bord/, limité à la      */
+/* région de l'admin par le backend)                                   */
+/* ------------------------------------------------------------------ */
+
+const NIVEAU: Record<string, RiskLevel> = {
+  critique: 'critique',
+  vigilance: 'vigilance',
+  moyen: 'vigilance',
+  normale: 'normale',
+  faible: 'normale',
+}
+const niveau = (n: string | null | undefined): RiskLevel => NIVEAU[n ?? ''] ?? 'normale'
+
+const BADGE: Record<RiskLevel, { label: string; tint: string; soft: string }> = {
+  critique: { label: 'Critique', tint: '#dc3a2f', soft: '#fdeeec' },
+  vigilance: { label: 'Vigilance', tint: '#e8940c', soft: '#fdf4e6' },
+  normale: { label: 'Normal', tint: '#1f9d55', soft: '#e9f6ee' },
+}
+
+const ACTIVITE: Record<ActiviteApi['type'], { icon: string; tint: string; soft: string }> = {
+  incident: { icon: 'report', tint: '#dc3a2f', soft: '#fdeeec' },
+  signalement: { icon: 'campaign', tint: '#e8940c', soft: '#fdf4e6' },
+  boitier: { icon: 'wifi_off', tint: '#2b6cb0', soft: '#e8f0f9' },
+  zone: { icon: 'crisis_alert', tint: '#7c3aed', soft: '#f1eafe' },
+}
+
+const COULEURS_TYPES = ['#2b6cb0', '#7c3aed', '#e8940c', '#dc3a2f']
+
+/** « il y a 5 min », « il y a 2 h », « il y a 3 j ». */
+export function ilYa(iso: string, maintenant = Date.now()): string {
+  const minutes = Math.max(0, Math.round((maintenant - Date.parse(iso)) / 60_000))
+  if (minutes < 1) return "à l'instant"
+  if (minutes < 60) return `il y a ${minutes} min`
+  const heures = Math.round(minutes / 60)
+  if (heures < 24) return `il y a ${heures} h`
+  return `il y a ${Math.round(heures / 24)} j`
+}
+
+const tendance = (n: number): AdminKpi['trendIcon'] => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat')
+
+/**
+ * Réponse du backend -> les structures du tableau de bord de l'admin régional, pour qu'il
+ * garde son interface. Sans réponse encore : tout à zéro, listes vides (rien d'inventé).
+ */
+export function adminDepuisApi(api: TableauDeBordApi | null, centre: [number, number], maintenant = Date.now()) {
+  const ind = api?.indicateurs
+  const ecart = (ind?.incidents.aujourd_hui ?? 0) - (ind?.incidents.hier ?? 0)
+  const kpis: AdminKpi[] = [
+    { icon: 'directions_car', tint: '#2b6cb0', soft: '#e8f0f9', value: String(ind?.boitiers.total ?? 0), label: 'Boîtiers IoT', trend: `${ind?.boitiers.en_ligne ?? 0} en ligne`, trendIcon: (ind?.boitiers.en_ligne ?? 0) > 0 ? 'up' : 'flat', cta: 'Voir tous', to: PATHS.admin.monitoring },
+    { icon: 'report', tint: '#dc3a2f', soft: '#fdeeec', value: String(ind?.incidents.aujourd_hui ?? 0), label: "Incidents aujourd'hui", trend: `${ecart > 0 ? '+' : ''}${ecart} vs hier`, trendIcon: tendance(ecart), cta: 'Voir détails', to: PATHS.admin.incidents },
+    { icon: 'notifications_active', tint: '#e8940c', soft: '#fdf4e6', value: String(ind?.alertes.actives ?? 0), label: 'Alertes actives', trend: `${ind?.alertes.nouvelles ?? 0} nouvelle${(ind?.alertes.nouvelles ?? 0) > 1 ? 's' : ''}`, trendIcon: tendance(ind?.alertes.nouvelles ?? 0), cta: 'Voir toutes', to: PATHS.admin.alertes },
+    { icon: 'crisis_alert', tint: '#7c3aed', soft: '#f1eafe', value: String(ind?.zones.reconnues ?? 0), label: 'Zones reconnues', trend: `${ind?.zones.en_validation_technique ?? 0} à valider`, trendIcon: 'flat', cta: 'Voir la carte', to: PATHS.admin.carte },
+    { icon: 'campaign', tint: '#0F766E', soft: '#e7f5f0', value: String(ind?.signalements.periode ?? 0), label: 'Signalements (30 j)', trend: `${ind?.signalements.en_attente ?? 0} en attente`, trendIcon: 'flat', cta: 'Voir tous', to: PATHS.admin.signalements },
+  ]
+
+  const events: AdminEvent[] = (api?.activite_recente ?? []).slice(0, 4).map((e, i) => ({
+    id: `act-${i}`,
+    ...ACTIVITE[e.type],
+    title: e.titre,
+    location: e.region ? regionLabel(e.region) : 'Région non renseignée',
+    ago: ilYa(e.date, maintenant),
+    badge: e.niveau ? BADGE[niveau(e.niveau)] : null,
+  }))
+
+  const zones: AdminZone[] = (api?.zones_plus_dangereuses ?? []).map((z) => ({
+    id: String(z.id),
+    name: z.nom,
+    offset: [z.latitude - centre[0], z.longitude - centre[1]],
+    incidents: z.nombre_incidents,
+    signalements: z.nombre_signalements,
+    avgSpeed: 0,
+    level: niveau(z.niveau_danger),
+    lastDetection: ilYa(z.date_maj, maintenant),
+  }))
+
+  // Classement par signalements citoyens (le classement par danger est déjà à côté de la carte).
+  const topLocalities: TopLocality[] = [...zones]
+    .sort((a, b) => (b.signalements ?? 0) - (a.signalements ?? 0) || b.incidents - a.incidents)
+    .map((z) => ({ id: z.id, name: z.name, incidents: z.incidents, alerts: z.signalements ?? 0, level: z.level }))
+
+  const pending: PendingZone[] = (api?.zones_a_valider ?? []).slice(0, 4).map((z) => ({
+    id: String(z.id),
+    name: z.nom,
+    level: niveau(z.niveau_danger),
+    detectedAt: `Détectée ${ilYa(z.date_creation, maintenant)} · ${z.nombre_incidents} incident${z.nombre_incidents > 1 ? 's' : ''}`,
+  }))
+
+  const week: DayStat[] = (api?.series ?? []).slice(-7).map((j) => ({
+    date: `${j.date.slice(8, 10)}/${j.date.slice(5, 7)}`,
+    incidents: j.incidents,
+    alertes: j.alertes,
+    zones: 0,
+    signalements: j.signalements,
+  }))
+
+  const types = api?.repartition_incidents ?? []
+  const principaux = types.slice(0, 4)
+  const reste = types.slice(4).reduce((a, t) => a + t.pourcentage, 0)
+  const breakdown: IncidentBreakdown[] = principaux.map((t, i) => ({
+    label: t.libelle,
+    pct: Math.round(t.pourcentage),
+    color: COULEURS_TYPES[i],
+  }))
+  if (reste > 0) breakdown.push({ label: 'Autres', pct: Math.round(reste), color: '#94a3b8' })
+
+  return { kpis, events, zones, topLocalities, pending, week, breakdown, total: ind?.incidents.periode ?? 0 }
+}

@@ -4,16 +4,13 @@ import { Link } from 'react-router-dom'
 import 'leaflet/dist/leaflet.css'
 import { useAuth } from '@/context/AuthContext'
 import {
-  ADMIN_EVENTS,
-  ADMIN_KPIS,
-  ADMIN_REGION_ZONES,
-  INCIDENT_BREAKDOWN,
-  INCIDENT_TOTAL,
-  PENDING_ZONES,
-  TOP_LOCALITIES,
-  WEEK_STATS,
+  adminDepuisApi,
+  type DayStat,
+  type IncidentBreakdown,
   type RiskLevel,
 } from '@/data/adminHome'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getTableauDeBord } from '@/lib/api'
 import { offsetLatLng, regionCenter, regionLabel } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
@@ -29,12 +26,17 @@ const TREND_ICON: Record<'up' | 'down' | 'flat', string> = {
   flat: 'trending_flat',
 }
 
+/** Chiffres de la région de l'admin (le backend limite lui-même le périmètre). */
+const chargerRegion = () => getTableauDeBord(30)
+
+type Metrique = 'incidents' | 'alertes' | 'signalements'
+
 function firstName(fullName: string): string {
   return fullName.split(' ')[0]
 }
 
-function StatsBarChart({ metric }: { metric: 'incidents' | 'alertes' | 'zones' }) {
-  const max = useMemo(() => Math.max(...WEEK_STATS.map((d) => d[metric]), 1), [metric])
+function StatsBarChart({ metric, WEEK_STATS }: { metric: Metrique; WEEK_STATS: DayStat[] }) {
+  const max = useMemo(() => Math.max(...WEEK_STATS.map((d) => d[metric] ?? 0), 1), [metric, WEEK_STATS])
   const color = metric === 'incidents' ? '#2b6cb0' : metric === 'alertes' ? '#e8940c' : '#7c3aed'
 
   return (
@@ -44,7 +46,7 @@ function StatsBarChart({ metric }: { metric: 'incidents' | 'alertes' | 'zones' }
           <div className="flex h-[104px] w-full items-end">
             <div
               className="w-full rounded-t-[5px] transition-all"
-              style={{ height: `${(d[metric] / max) * 100}%`, backgroundColor: color, minHeight: 4 }}
+              style={{ height: `${((d[metric] ?? 0) / max) * 100}%`, backgroundColor: color, minHeight: 4 }}
             />
           </div>
           <span className="text-[10px] font-semibold text-faint">{d.date}</span>
@@ -54,19 +56,17 @@ function StatsBarChart({ metric }: { metric: 'incidents' | 'alertes' | 'zones' }
   )
 }
 
-function IncidentDonut() {
-  let cursor = 0
-  const stops = INCIDENT_BREAKDOWN.map((seg) => {
-    const from = cursor
-    cursor += seg.pct
-    return `${seg.color} ${from}% ${cursor}%`
+function IncidentDonut({ INCIDENT_BREAKDOWN, INCIDENT_TOTAL }: { INCIDENT_BREAKDOWN: IncidentBreakdown[]; INCIDENT_TOTAL: number }) {
+  const stops = INCIDENT_BREAKDOWN.map((seg, i) => {
+    const from = INCIDENT_BREAKDOWN.slice(0, i).reduce((a, s) => a + s.pct, 0)
+    return `${seg.color} ${from}% ${from + seg.pct}%`
   }).join(', ')
 
   return (
     <div className="flex items-center gap-5">
       <div
         className="relative h-[120px] w-[120px] flex-none rounded-full"
-        style={{ background: `conic-gradient(${stops})` }}
+        style={{ background: stops ? `conic-gradient(${stops})` : '#e2e8f0' }}
       >
         <div className="absolute inset-[14px] flex flex-col items-center justify-center rounded-full bg-white">
           <p className="m-0 text-2xl font-extrabold leading-none text-ink">{INCIDENT_TOTAL}</p>
@@ -74,6 +74,7 @@ function IncidentDonut() {
         </div>
       </div>
       <ul className="flex min-w-0 flex-1 flex-col gap-2">
+        {INCIDENT_BREAKDOWN.length === 0 && <li className="text-xs text-faint">Aucun incident sur 30 jours.</li>}
         {INCIDENT_BREAKDOWN.map((seg) => (
           <li key={seg.label} className="flex items-center gap-2 text-xs">
             <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: seg.color }} />
@@ -91,7 +92,19 @@ export function DashboardPage() {
   const region = regionLabel(user?.region)
   const center = useMemo(() => regionCenter(user?.region), [user?.region])
   const [clock, setClock] = useState(() => new Date())
-  const [metric, setMetric] = useState<'incidents' | 'alertes' | 'zones'>('incidents')
+  const [metric, setMetric] = useState<Metrique>('incidents')
+  // Données réelles de la région, rafraîchies toutes les 30 s.
+  const { donnees, erreur, maj } = useEnDirect(chargerRegion, 30_000)
+  const {
+    kpis: ADMIN_KPIS,
+    events: ADMIN_EVENTS,
+    zones: ADMIN_REGION_ZONES,
+    topLocalities: TOP_LOCALITIES,
+    pending: PENDING_ZONES,
+    week: WEEK_STATS,
+    breakdown: INCIDENT_BREAKDOWN,
+    total: INCIDENT_TOTAL,
+  } = useMemo(() => adminDepuisApi(donnees, center, maj), [donnees, center, maj])
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 30000)
@@ -142,6 +155,8 @@ export function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {erreur && <p className="mx-6 mt-3 text-xs font-semibold text-danger-600">{erreur}</p>}
 
       <section className="mx-6 mt-4.5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
         {ADMIN_KPIS.map((kpi) => (
@@ -208,7 +223,7 @@ export function DashboardPage() {
                           Zone {meta.label.toLowerCase()}
                         </p>
                         <p className="m-0 mt-1.5 text-[11.5px] text-body">
-                          {zone.incidents} incidents · {zone.avgSpeed} km/h (moy.)
+                          {zone.incidents} incidents · {zone.signalements ?? 0} signalements
                         </p>
                         <p className="m-0 mt-1 text-[11px] text-faint">Dernière détection : {zone.lastDetection}</p>
                       </div>
@@ -240,6 +255,7 @@ export function DashboardPage() {
             </Link>
           </div>
           <ul className="flex flex-col gap-3.5">
+            {ADMIN_EVENTS.length === 0 && <li className="text-xs text-faint">Aucune activité récente.</li>}
             {ADMIN_EVENTS.map((ev) => (
               <li key={ev.id} className="flex items-start gap-3">
                 <span
@@ -276,6 +292,7 @@ export function DashboardPage() {
             </Link>
           </div>
           <ul className="flex flex-col gap-3">
+            {ADMIN_REGION_ZONES.length === 0 && <li className="text-xs text-faint">Aucune zone reconnue par l'ANASER pour l'instant.</li>}
             {ADMIN_REGION_ZONES.map((zone) => {
               const meta = LEVEL_META[zone.level]
               return (
@@ -284,7 +301,7 @@ export function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <p className="m-0 truncate text-[12.5px] font-bold text-ink">{zone.name}</p>
                     <p className="m-0 mt-0.5 text-[11px] text-faint">
-                      {zone.incidents} incidents · {zone.avgSpeed} km/h
+                      {zone.incidents} incidents · {zone.signalements ?? 0} signalements
                     </p>
                   </div>
                   <span
@@ -307,7 +324,7 @@ export function DashboardPage() {
             <span className="text-[11px] font-semibold text-faint">7 derniers jours</span>
           </div>
           <div className="mb-4 flex gap-1.5 rounded-full bg-page p-1">
-            {(['incidents', 'alertes', 'zones'] as const).map((m) => (
+            {(['incidents', 'alertes', 'signalements'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -320,17 +337,18 @@ export function DashboardPage() {
               </button>
             ))}
           </div>
-          <StatsBarChart metric={metric} />
+          <StatsBarChart metric={metric} WEEK_STATS={WEEK_STATS} />
         </div>
 
         <div className="min-w-0 rounded-2xl border border-line bg-white p-5 shadow-card">
           <div className="mb-3.5 flex items-center justify-between">
-            <p className="m-0 text-sm font-extrabold text-ink">Top localités à surveiller</p>
+            <p className="m-0 text-sm font-extrabold text-ink">Zones les plus signalées</p>
             <Link to={PATHS.admin.carte} className="text-xs font-bold text-brand-600">
               Voir plus →
             </Link>
           </div>
           <ul className="flex flex-col gap-3">
+            {TOP_LOCALITIES.length === 0 && <li className="text-xs text-faint">Aucune zone reconnue pour l'instant.</li>}
             {TOP_LOCALITIES.map((loc) => {
               const meta = LEVEL_META[loc.level]
               return (
@@ -338,7 +356,7 @@ export function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <p className="m-0 text-[12.5px] font-bold text-ink">{loc.name}</p>
                     <p className="m-0 mt-0.5 text-[11px] text-faint">
-                      {loc.incidents} incident{loc.incidents > 1 ? 's' : ''} · {loc.alerts} alerte{loc.alerts > 1 ? 's' : ''}
+                      {loc.incidents} incident{loc.incidents > 1 ? 's' : ''} · {loc.alerts} signalement{loc.alerts > 1 ? 's' : ''}
                     </p>
                   </div>
                   <span
@@ -355,7 +373,7 @@ export function DashboardPage() {
 
         <div className="min-w-0 rounded-2xl border border-line bg-white p-5 shadow-card">
           <p className="m-0 mb-4 text-sm font-extrabold text-ink">Répartition des incidents</p>
-          <IncidentDonut />
+          <IncidentDonut INCIDENT_BREAKDOWN={INCIDENT_BREAKDOWN} INCIDENT_TOTAL={INCIDENT_TOTAL} />
         </div>
 
         <div className="min-w-0 rounded-2xl border border-line bg-white p-5 shadow-card">
@@ -366,6 +384,7 @@ export function DashboardPage() {
             </Link>
           </div>
           <ul className="flex flex-col gap-3">
+            {PENDING_ZONES.length === 0 && <li className="text-xs text-faint">Aucune zone en attente de validation.</li>}
             {PENDING_ZONES.map((zone) => {
               const meta = LEVEL_META[zone.level]
               return (
@@ -375,12 +394,12 @@ export function DashboardPage() {
                     <p className="m-0 truncate text-[12.5px] font-bold text-ink">{zone.name}</p>
                     <p className="m-0 mt-0.5 truncate text-[10.5px] text-faint">{zone.detectedAt}</p>
                   </div>
-                  <button
-                    type="button"
+                  <Link
+                    to={PATHS.admin.zones}
                     className="flex-none rounded-full bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-brand-700"
                   >
-                    Valider
-                  </button>
+                    Examiner
+                  </Link>
                 </li>
               )
             })}
