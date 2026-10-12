@@ -14,6 +14,8 @@ import { IncidentsPage as AdminIncidentsPage } from '@/pages/admin/IncidentsPage
 import { MonitoringPage as AdminMonitoringPage } from '@/pages/admin/MonitoringPage'
 import { SignalementsPage as AdminSignalementsPage } from '@/pages/admin/SignalementsPage'
 import { ZonesPage as AdminZonesPage } from '@/pages/admin/ZonesPage'
+import { DemandesPage } from '@/pages/admin/DemandesPage'
+import { MessagesPage } from '@/pages/superadmin/MessagesPage'
 import { DashboardPage as AnaserDashboardPage } from '@/pages/anaser/DashboardPage'
 import { ProfilPage as AnaserProfilPage } from '@/pages/anaser/ProfilPage'
 import { RetoursPage as AnaserRetoursPage } from '@/pages/anaser/RetoursPage'
@@ -78,6 +80,7 @@ export function AppRoutes() {
           <Route path={PATHS.admin.incidents} element={<AdminIncidentsPage />} />
           <Route path={PATHS.admin.signalements} element={<AdminSignalementsPage />} />
           <Route path={PATHS.admin.zones} element={<AdminZonesPage />} />
+          <Route path={PATHS.admin.demandes} element={<DemandesPage />} />
           <Route path={PATHS.admin.alertes} element={<AdminAlertesPage />} />
           <Route path={PATHS.admin.boitiers} element={<AdminBoitiersPage />} />
           {/* La page Statistiques dédiée a été retirée : ses indicateurs vivent
@@ -128,6 +131,8 @@ export function AppRoutes() {
           {/* Vue réelle commune (validation, archivage, recalcul). La page détaillée pages/superadmin/ZonesPage.tsx
               est mise de côté jusqu'à ce que le backend expose les incidents et signalements d'une zone. */}
           <Route path={PATHS.superAdmin.zones} element={<AdminZonesPage national />} />
+          <Route path={PATHS.superAdmin.demandes} element={<DemandesPage national />} />
+          <Route path={PATHS.superAdmin.messages} element={<MessagesPage />} />
           <Route path={PATHS.superAdmin.statistiques} element={<PageStub title="Statistiques" />} />
           <Route path={PATHS.superAdmin.notifications} element={<PageStub title="Notifications" />} />
           <Route path={PATHS.superAdmin.rapports} element={<PageStub title="Rapports" />} />

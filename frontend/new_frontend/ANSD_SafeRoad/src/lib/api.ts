@@ -42,6 +42,13 @@ async function envoyerPublic<T>(path: string, corps: unknown, defaut: string): P
   return res.json()
 }
 
+export type SujetContact = 'question' | 'signalement' | 'suggestion' | 'partenariat' | 'support' | 'autre'
+
+/** Formulaire public Contact (sans compte, limité par IP) : lu par le super admin. */
+export function envoyerMessageContact(donnees: { nom: string; email: string; telephone?: string; sujet: SujetContact; message: string }): Promise<{ id: number }> {
+  return envoyerPublic('/messages-contact/', donnees, 'Envoi impossible pour le moment.')
+}
+
 export type TypeVehicule = 'voiture' | 'taxi' | 'bus' | 'camion' | 'moto' | 'autre'
 
 export interface DemandeInstallation {
@@ -646,6 +653,96 @@ export function modifierAdministrateur(id: string, donnees: Partial<Administrate
 
 export function envoyerLienAdministrateur(id: string): Promise<{ detail: string }> {
   return authorizedFetch(`/administrateurs/${id}/reinitialiser-mot-de-passe/`, { method: 'POST' })
+}
+
+// ---------------------------------------------------------------------------
+// Demandes d'installation (admin de la région demandée + super admin) et messages de contact
+// (super admin). L'installation crée le compte conducteur (invitation par e-mail) et le boîtier,
+// et renvoie UNE SEULE FOIS sa clé API.
+// ---------------------------------------------------------------------------
+
+export type StatutDemande = 'nouvelle' | 'contactee' | 'rdv_planifie' | 'installee' | 'annulee'
+
+export interface DemandeInstallationApi {
+  id: number
+  nom: string
+  prenom: string
+  telephone: string
+  email: string
+  region: string
+  region_libelle: string
+  commune: string
+  adresse: string
+  type_vehicule: TypeVehicule
+  type_vehicule_libelle: string
+  immatriculation: string
+  nombre_vehicules: number
+  disponibilites: string
+  message: string
+  contact_urgence_nom: string
+  contact_urgence_telephone: string
+  statut: StatutDemande
+  statut_libelle: string
+  rdv_date: string | null
+  rdv_lieu: string
+  numero_cni: string
+  conducteur: string | number | null
+  boitier: string | null
+  date_creation: string
+  date_maj: string
+}
+
+export interface HistoriqueDemandeApi {
+  id: number
+  statut_nouveau_libelle: string
+  acteur_nom: string | null
+  role_acteur: string
+  commentaire: string
+  date: string
+}
+
+export function getDemandesInstallation(): Promise<DemandeInstallationApi[]> {
+  return authorizedFetch('/demandes-installation/')
+}
+
+export function changerStatutDemande(id: number, statut: 'contactee' | 'annulee', commentaire = ''): Promise<DemandeInstallationApi> {
+  return authorizedFetch(`/demandes-installation/${id}/statut/`, { method: 'PATCH', body: JSON.stringify({ statut, commentaire }) })
+}
+
+export function planifierRendezVous(id: number, donnees: { rdv_date: string; rdv_lieu: string; commentaire?: string }): Promise<DemandeInstallationApi> {
+  return authorizedFetch(`/demandes-installation/${id}/rendez-vous/`, { method: 'POST', body: JSON.stringify(donnees) })
+}
+
+export function enregistrerInstallation(
+  id: number,
+  donnees: { numero_cni: string; email?: string; immatriculation?: string; commentaire?: string },
+): Promise<DemandeInstallationApi & { boitier_api_key: string }> {
+  return authorizedFetch(`/demandes-installation/${id}/installer/`, { method: 'POST', body: JSON.stringify(donnees) })
+}
+
+export function getHistoriqueDemande(id: number): Promise<HistoriqueDemandeApi[]> {
+  return authorizedFetch(`/demandes-installation/${id}/historique/`)
+}
+
+export interface MessageContactApi {
+  id: number
+  nom: string
+  email: string
+  telephone: string
+  sujet: SujetContact
+  sujet_libelle: string
+  message: string
+  traite: boolean
+  traite_le: string | null
+  date_creation: string
+}
+
+export function getMessagesContact(): Promise<MessageContactApi[]> {
+  return authorizedFetch('/messages-contact/')
+}
+
+export function traiterMessageContact(id: number): Promise<MessageContactApi> {
+  return authorizedFetch(`/messages-contact/${id}/traiter/`, { method: 'POST' })
 }
 
 // ---------------------------------------------------------------------------

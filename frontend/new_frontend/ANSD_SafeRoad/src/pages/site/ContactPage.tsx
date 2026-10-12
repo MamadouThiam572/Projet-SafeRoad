@@ -1,14 +1,22 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import heroRoadUrl from '@/assets/images/hero-road.png'
 import { Reveal } from '@/components/site/Reveal'
+import { ApiError, envoyerMessageContact, type SujetContact } from '@/lib/api'
 
 /** Siège SafeRoad — Avenue Bourguiba, Dakar (coordonnées approximatives du centre-ville). */
 const OFFICE_POSITION: [number, number] = [14.6937, -17.4441]
 
-const SUBJECTS = ['Question générale', 'Signalement', 'Suggestion', 'Partenariat', 'Support technique', 'Autre']
+const SUBJECTS: { value: SujetContact; label: string }[] = [
+  { value: 'question', label: 'Question générale' },
+  { value: 'signalement', label: 'Signalement' },
+  { value: 'suggestion', label: 'Suggestion' },
+  { value: 'partenariat', label: 'Partenariat' },
+  { value: 'support', label: 'Support technique' },
+  { value: 'autre', label: 'Autre' },
+]
 
 const SOCIALS = [
   { abbr: 'f', label: 'Facebook' },
@@ -58,24 +66,26 @@ function InfoCard({
 export function ContactPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [subject, setSubject] = useState('')
+  const [subject, setSubject] = useState<SujetContact | ''>('')
   const [message, setMessage] = useState('')
-  const [fileName, setFileName] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
 
-  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    setFileName(e.target.files?.[0]?.name ?? null)
-  }
-
-  /*
-   * Aucune API de contact n'existe encore côté SafeRoad — ce formulaire
-   * valide et affiche une confirmation locale, sans réel envoi. À brancher
-   * sur un endpoint réel dès qu'il existera (voir message à Marie).
-   */
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  /** Envoi réel (POST /messages-contact/) : le message arrive chez le super admin. */
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!name.trim() || !email.trim() || !subject || !message.trim()) return
-    setSubmitted(true)
+    setSending(true)
+    setError('')
+    try {
+      await envoyerMessageContact({ nom: name.trim(), email: email.trim(), sujet: subject, message: message.trim() })
+      setSubmitted(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Envoi impossible pour le moment. Réessayez plus tard.')
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -187,7 +197,7 @@ export function ContactPage() {
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+              <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 flex flex-col gap-4">
                 <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-bold text-ink">Nom complet *</span>
@@ -218,15 +228,15 @@ export function ContactPage() {
                   <select
                     required
                     value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
+                    onChange={(e) => setSubject(e.target.value as SujetContact)}
                     className="w-full rounded-[11px] border-[1.5px] border-line-field bg-field px-3.5 py-3 text-sm font-medium text-ink outline-none focus:border-brand-600"
                   >
                     <option value="" disabled>
                       Choisissez un sujet
                     </option>
                     {SUBJECTS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
+                      <option key={s.value} value={s.value}>
+                        {s.label}
                       </option>
                     ))}
                   </select>
@@ -250,27 +260,17 @@ export function ContactPage() {
                   />
                 </label>
 
-                <div className="rounded-[11px] border border-dashed border-line-field bg-field px-3.5 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <span className="block text-xs font-bold text-ink">Joindre un fichier (optionnel)</span>
-                      <span className="mt-0.5 block text-[11px] text-faint">
-                        {fileName ?? 'Formats acceptés : PDF, JPG, PNG (max. 10 Mo)'}
-                      </span>
-                    </div>
-                    <label className="flex-none cursor-pointer rounded-[9px] border border-line-field bg-white px-3 py-2 text-xs font-bold text-ink transition-colors hover:border-brand-600 hover:text-brand-600">
-                      Choisir un fichier
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileChange} className="hidden" />
-                    </label>
-                  </div>
-                </div>
+                {/* Pas de pièce jointe : le message est enregistré tel quel. Pour un danger sur la route,
+                    les conducteurs équipés utilisent « Signaler un danger » (position + photo). */}
+                {error && <p className="m-0 text-xs font-semibold text-danger-600">{error}</p>}
 
                 <button
                   type="submit"
-                  className="mt-1 flex items-center justify-center gap-2 self-start rounded-full bg-brand-600 px-6 py-3 text-sm font-bold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-card-hover"
+                  disabled={sending}
+                  className="mt-1 flex disabled:opacity-60  items-center justify-center gap-2 self-start rounded-full bg-brand-600 px-6 py-3 text-sm font-bold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-card-hover"
                 >
                   <span className="ic text-base">send</span>
-                  Envoyer le message
+                  {sending ? 'Envoi…' : 'Envoyer le message'}
                 </button>
               </form>
             )}

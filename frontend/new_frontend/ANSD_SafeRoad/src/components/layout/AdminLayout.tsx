@@ -13,6 +13,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { key: 'zones', icon: 'fact_check', label: 'Zones à valider', to: PATHS.admin.zones },
   { key: 'alertes', icon: 'notifications', label: 'Alertes', to: PATHS.admin.alertes },
   { key: 'boitiers', icon: 'memory', label: 'Boîtiers', to: PATHS.admin.boitiers },
+  { key: 'demandes', icon: 'assignment', label: 'Demandes', to: PATHS.admin.demandes },
   { key: 'historique', icon: 'history', label: 'Historique', to: PATHS.admin.historique },
 ]
 

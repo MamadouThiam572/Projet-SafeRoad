@@ -15,6 +15,8 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { key: 'dashboard', icon: 'dashboard', label: 'Dashboard national', to: PATHS.superAdmin.root, end: true },
   { key: 'utilisateurs', icon: 'group', label: 'Utilisateurs', to: PATHS.superAdmin.utilisateurs },
   { key: 'boitiers', icon: 'memory', label: 'Boîtiers', to: PATHS.superAdmin.boitiers },
+  { key: 'demandes', icon: 'assignment', label: 'Demandes', to: PATHS.superAdmin.demandes },
+  { key: 'messages', icon: 'mail', label: 'Messages', to: PATHS.superAdmin.messages },
   { key: 'monitoring', icon: 'sensors', label: 'Monitoring IoT', to: PATHS.superAdmin.monitoring },
   { key: 'incidents', icon: 'report', label: 'Incidents', to: PATHS.superAdmin.incidents },
   { key: 'signalements', icon: 'campaign', label: 'Signalements', to: PATHS.superAdmin.signalements },
