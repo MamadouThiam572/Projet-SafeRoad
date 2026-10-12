@@ -1,19 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CircleMarker, MapContainer, TileLayer } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useAuth } from '@/context/AuthContext'
 import {
   CORRESPONDANCE_LABEL,
   DANGER_META,
-  KPI_TRENDS,
-  SIGNALEMENTS,
+  signalementDepuisApi,
   STATUT_META,
+  STATUT_VERS_API,
+  tendance7j,
   type Correspondance,
   type DangerType,
-  type Signalement,
   type StatutSignalement,
 } from '@/data/adminSignalements'
-import { offsetLatLng, regionCenter, regionLabel } from '@/lib/regions'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import {
+  ApiError,
+  changerStatutSignalement,
+  chargerPhotoSignalement,
+  getHistoriqueSignalement,
+  getIncidentsProches,
+  getSignalements,
+  type HistoriqueSignalementApi,
+  type IncidentsProchesApi,
+} from '@/lib/api'
+import { regionLabel } from '@/lib/regions'
 
 const PAGE_SIZE = 8
 
@@ -40,19 +51,21 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
   )
 }
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function nowParts(): { date: string; heure: string } {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return { date: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`, heure: `${pad(d.getHours())}:${pad(d.getMinutes())}` }
+const ROLE_LIBELLE: Record<string, string> = { admin: 'Admin régional', super_admin: 'Super admin', anaser: 'ANASER' }
+
+const dateHeure = (iso: string) => {
+  const t = new Date(iso)
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return { date: `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()}`, heure: `${p2(t.getHours())}:${p2(t.getMinutes())}` }
 }
 
-/** "2026-10-03" -> "03 octobre 2026" (pour l'en-tête du détail, comme sur la maquette). */
+/** "03/10/2026" -> "03 octobre 2026" (pour l'en-tête du détail, comme sur la maquette). */
 function formatDateLong(dateFr: string): string {
   const [day, month, year] = dateFr.split('/').map(Number)
   const d = new Date(year, month - 1, day)
@@ -60,13 +73,19 @@ function formatDateLong(dateFr: string): string {
   return label
 }
 
-export function SignalementsPage() {
+/**
+ * Signalements des conducteurs. Admin régional : ceux de sa région (filtrés par le backend) ;
+ * `national` : tous (super admin). Validation technique seulement : un signalement validé
+ * renforce une zone, les données des boîtiers restant prioritaires.
+ */
+export function SignalementsPage({ national = false }: { national?: boolean }) {
   const { user } = useAuth()
-  const region = regionLabel(user?.region)
-  const center = useMemo(() => regionCenter(user?.region), [user?.region])
+  const region = national ? 'Toutes les régions' : regionLabel(user?.region)
 
-  const [signalements, setSignalements] = useState<Signalement[]>(SIGNALEMENTS)
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Liste réelle, rafraîchie toutes les 20 s.
+  const { donnees, erreur, maj, recharger } = useEnDirect(getSignalements, 20_000)
+  const signalements = useMemo(() => (donnees ?? []).map(signalementDepuisApi), [donnees])
+  const lastRefresh = formatNow(maj)
 
   const [search, setSearch] = useState('')
   const [type, setType] = useState<'tous' | DangerType>('tous')
@@ -80,6 +99,15 @@ export function SignalementsPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [observationDraft, setObservationDraft] = useState('')
+  const [correspondance, setCorrespondance] = useState<Correspondance>(null)
+  const [preuves, setPreuves] = useState<{ id: number; proches: IncidentsProchesApi | null; historique: HistoriqueSignalementApi[]; photo: string | null }>({
+    id: 0,
+    proches: null,
+    historique: [],
+    photo: null,
+  })
+  const [envoi, setEnvoi] = useState(false)
+  const [erreurAction, setErreurAction] = useState('')
 
   const localites = useMemo(() => Array.from(new Set(signalements.map((s) => s.localite))).sort(), [signalements])
 
@@ -107,10 +135,11 @@ export function SignalementsPage() {
     const enVerification = signalements.filter((s) => s.statut === 'en_verification').length
     const traites = signalements.filter((s) => s.statut === 'valide' || s.statut === 'rejete').length
     return [
-      { key: 'total', icon: 'campaign', tint: '#2b6cb0', soft: '#e8f0f9', value: total, label: 'Total signalements', sub: 'Tous les signalements reçus', trend: KPI_TRENDS.total },
-      { key: 'attente', icon: 'schedule', tint: '#e8940c', soft: '#fdf4e6', value: enAttente, label: 'En attente', sub: 'Signalements nécessitant une vérification', trend: KPI_TRENDS.enAttente },
-      { key: 'verif', icon: 'search', tint: '#2b6cb0', soft: '#e8f0f9', value: enVerification, label: 'En vérification', sub: 'Signalements actuellement examinés', trend: KPI_TRENDS.enVerification },
-      { key: 'traites', icon: 'check_circle', tint: '#1f9d55', soft: '#e9f6ee', value: traites, label: 'Traités', sub: 'Signalements validés ou rejetés', trend: KPI_TRENDS.traites },
+      // Courbes : signalements reçus chacun des 7 derniers jours, selon leur statut actuel.
+      { key: 'total', icon: 'campaign', tint: '#2b6cb0', soft: '#e8f0f9', value: total, label: 'Total signalements', sub: 'Tous les signalements reçus', trend: tendance7j(signalements) },
+      { key: 'attente', icon: 'schedule', tint: '#e8940c', soft: '#fdf4e6', value: enAttente, label: 'En attente', sub: 'Signalements nécessitant une vérification', trend: tendance7j(signalements, (x) => x.statut === 'en_attente') },
+      { key: 'verif', icon: 'search', tint: '#2b6cb0', soft: '#e8f0f9', value: enVerification, label: 'En vérification', sub: 'Signalements actuellement examinés', trend: tendance7j(signalements, (x) => x.statut === 'en_verification') },
+      { key: 'traites', icon: 'check_circle', tint: '#1f9d55', soft: '#e9f6ee', value: traites, label: 'Traités', sub: 'Signalements validés ou rejetés', trend: tendance7j(signalements, (x) => x.statut === 'valide' || x.statut === 'rejete') },
     ]
   }, [signalements])
 
@@ -145,63 +174,59 @@ export function SignalementsPage() {
   const openDetail = (id: string) => {
     setSelectedId(id)
     setObservationDraft('')
+    setCorrespondance(null)
+    setErreurAction('')
   }
 
-  // TODO backend : chaque action ci-dessous doit devenir un appel API (PATCH /api/v1/signalements/{id}/…)
-  // réservé aux rôles admin/super_admin ; pour l'instant tout reste en état local.
-  const updateSignalement = (id: string, fn: (s: Signalement) => Signalement) => {
-    setSignalements((prev) => prev.map((s) => (s.id === id ? fn(s) : s)))
+  const selectedApiId = selectedId ? (signalements.find((x) => x.id === selectedId)?.apiId ?? 0) : 0
+  const selectedPhotoUrl = selectedId ? (signalements.find((x) => x.id === selectedId)?.photoUrl ?? null) : null
+
+  // Preuves du signalement ouvert : incidents des boîtiers autour, historique et photo protégée.
+  useEffect(() => {
+    if (!selectedApiId) return
+    let actif = true
+    let photo: string | null = null
+    void Promise.all([
+      getIncidentsProches(selectedApiId).catch(() => null),
+      getHistoriqueSignalement(selectedApiId).catch(() => []),
+      selectedPhotoUrl ? chargerPhotoSignalement(selectedPhotoUrl).catch(() => null) : Promise.resolve(null),
+    ]).then(([proches, historique, url]) => {
+      photo = url
+      if (actif) setPreuves({ id: selectedApiId, proches, historique, photo: url })
+      else if (url) URL.revokeObjectURL(url)
+    })
+    return () => {
+      actif = false
+      if (photo) URL.revokeObjectURL(photo)
+    }
+  }, [selectedApiId, selectedPhotoUrl, maj])
+
+  /** Décision enregistrée par le backend (qui vérifie le rôle et la transition) puis rechargée. */
+  const decider = async (id: string, statut: StatutSignalement) => {
+    const sig = signalements.find((x) => x.id === id)
+    if (!sig) return
+    const observation = observationDraft.trim()
+    if (statut === 'rejete' && !observation) {
+      setErreurAction('Un rejet doit être motivé : écrivez une observation.')
+      return
+    }
+    const commentaire = [correspondance ? CORRESPONDANCE_LABEL[correspondance] : '', observation].filter(Boolean).join(' — ')
+    setEnvoi(true)
+    setErreurAction('')
+    try {
+      await changerStatutSignalement(sig.apiId, STATUT_VERS_API[statut], commentaire)
+      setObservationDraft('')
+      await recharger()
+    } catch (err) {
+      setErreurAction(err instanceof ApiError ? err.message : 'Décision non enregistrée : serveur injoignable.')
+    } finally {
+      setEnvoi(false)
+    }
   }
 
-  const handleCommencerVerification = (id: string) => {
-    const { date, heure } = nowParts()
-    updateSignalement(id, (s) => ({
-      ...s,
-      statut: 'en_verification',
-      historique: [...s.historique, { date, heure, texte: "Signalement pris en charge par l'administrateur régional" }],
-    }))
-  }
-
-  const handleCorrespondance = (id: string, value: Correspondance) => {
-    updateSignalement(id, (s) => ({ ...s, correspondance: value }))
-  }
-
-  const handleAjouterObservation = (id: string) => {
-    const texte = observationDraft.trim()
-    if (!texte) return
-    const { date, heure } = nowParts()
-    updateSignalement(id, (s) => ({
-      ...s,
-      historique: [...s.historique, { date, heure, texte: `Observation de l'administrateur : « ${texte} »` }],
-    }))
-    setObservationDraft('')
-  }
-
-  const handleValider = (id: string) => {
-    const { date, heure } = nowParts()
-    updateSignalement(id, (s) =>
-      s.statut === 'valide'
-        ? s
-        : { ...s, statut: 'valide', historique: [...s.historique, { date, heure, texte: "Signalement validé par l'administrateur régional" }] },
-    )
-  }
-
-  const handleRejeter = (id: string) => {
-    const { date, heure } = nowParts()
-    updateSignalement(id, (s) =>
-      s.statut === 'rejete'
-        ? s
-        : { ...s, statut: 'rejete', historique: [...s.historique, { date, heure, texte: "Signalement rejeté par l'administrateur régional" }] },
-    )
-  }
-
-  const handleTransmettreAnaser = (id: string) => {
-    const { date, heure } = nowParts()
-    updateSignalement(id, (s) => ({
-      ...s,
-      historique: [...s.historique, { date, heure, texte: "Transmis à l'ANASER pour information complémentaire" }],
-    }))
-  }
+  const handleCommencerVerification = (id: string) => void decider(id, 'en_verification')
+  const handleValider = (id: string) => void decider(id, 'valide')
+  const handleRejeter = (id: string) => void decider(id, 'rejete')
 
   const selectedSignalement = selectedId ? signalements.find((s) => s.id === selectedId) ?? null : null
 
@@ -209,7 +234,11 @@ export function SignalementsPage() {
     const s = selectedSignalement
     const dMeta = DANGER_META[s.type]
     const sMeta = STATUT_META[s.statut]
-    const [lat, lng] = offsetLatLng(center, s.offset)
+    const { lat, lng } = s
+    const aJour = preuves.id === s.apiId
+    const proches = aJour ? preuves.proches : null
+    const historique = aJour ? preuves.historique : []
+    const decisionPrise = s.statut === 'valide' || s.statut === 'rejete'
 
     return (
       <div className="pb-8">
@@ -237,6 +266,7 @@ export function SignalementsPage() {
           {s.statut === 'en_attente' && (
             <button
               type="button"
+              disabled={envoi}
               onClick={() => handleCommencerVerification(s.id)}
               className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 px-4 py-2.5 text-[12.5px] font-bold text-white hover:bg-brand-700"
             >
@@ -274,7 +304,7 @@ export function SignalementsPage() {
               </div>
               <div>
                 <dt className="font-semibold text-faint">Région</dt>
-                <dd className="m-0 mt-0.5 font-semibold text-ink">{region}</dd>
+                <dd className="m-0 mt-0.5 font-semibold text-ink">{donnees?.find((x) => x.id === s.apiId)?.region_libelle ?? region}</dd>
               </div>
             </dl>
           </div>
@@ -290,12 +320,8 @@ export function SignalementsPage() {
                 <dd className="m-0 mt-0.5 font-bold text-ink">{s.conducteur}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-faint">Véhicule</dt>
-                <dd className="m-0 mt-0.5 font-semibold text-ink">{s.vehicule ?? 'Non renseigné'}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-faint">Téléphone</dt>
-                <dd className="m-0 mt-0.5 font-semibold text-ink">{s.telephone}</dd>
+                <dt className="font-semibold text-faint">Précision GPS</dt>
+                <dd className="m-0 mt-0.5 font-semibold text-ink">{s.precision != null ? `± ${Math.round(s.precision)} m` : 'Non transmise'}</dd>
               </div>
               <div>
                 <dt className="font-semibold text-faint">Boîtier</dt>
@@ -310,7 +336,7 @@ export function SignalementsPage() {
             <span className="ic text-base text-brand-600">chat_bubble</span>
             Description du danger
           </p>
-          <p className="m-0 text-[13px] italic leading-relaxed text-body">« {s.description} »</p>
+          <p className="m-0 text-[13px] italic leading-relaxed text-body">{s.description ? `« ${s.description} »` : 'Aucune description.'}</p>
         </section>
 
         <section className="mx-6 mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -319,15 +345,25 @@ export function SignalementsPage() {
               <span className="ic text-base text-brand-600">photo_camera</span>
               Photo du danger
             </p>
-            {/* Pas de photo réelle transmise par le conducteur branchée pour l'instant — aperçu
-                générique en attendant que le backend expose les pièces jointes des signalements. */}
-            <div className="flex h-[150px] items-center justify-center rounded-xl bg-page text-faint">
-              <span className="ic text-4xl">image</span>
-            </div>
-            <button type="button" className="mt-2.5 flex items-center gap-1 text-[11.5px] font-bold text-brand-600">
-              <span className="ic text-base">fullscreen</span>
-              Voir en plein écran
-            </button>
+            {aJour && preuves.photo ? (
+              <>
+                <img src={preuves.photo} alt="Photo du danger" className="h-[150px] w-full rounded-xl object-cover" />
+                <a
+                  href={preuves.photo}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2.5 flex items-center gap-1 text-[11.5px] font-bold text-brand-600"
+                >
+                  <span className="ic text-base">fullscreen</span>
+                  Voir en plein écran
+                </a>
+              </>
+            ) : (
+              <div className="flex h-[150px] flex-col items-center justify-center gap-1 rounded-xl bg-page text-faint">
+                <span className="ic text-4xl">image</span>
+                <span className="text-[11px] font-semibold">{s.photoUrl ? 'Chargement de la photo…' : 'Aucune photo jointe'}</span>
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-line bg-white p-5 shadow-card">
@@ -368,21 +404,29 @@ export function SignalementsPage() {
             Données SafeRoad à proximité
           </p>
           <p className="m-0 mb-2 text-[11.5px] font-bold text-faint">Événements détectés à proximité</p>
-          {s.evenementsProches.length === 0 ? (
-            <p className="m-0 text-[12px] text-faint">Aucun événement SafeRoad détecté à proximité de ce signalement.</p>
+          {!proches ? (
+            <p className="m-0 text-[12px] text-faint">Recherche des incidents des boîtiers autour du signalement…</p>
+          ) : proches.incidents.length === 0 ? (
+            <p className="m-0 text-[12px] text-faint">
+              Aucun incident détecté par les boîtiers dans un rayon de {Math.round(proches.rayon_metres)} m.
+            </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {s.evenementsProches.map((ev, i) => (
-                <li key={i} className="flex items-center gap-2 text-[12px] text-body">
-                  <span className="h-2 w-2 flex-none rounded-full bg-brand-600" />
-                  <span className="font-bold text-ink">{ev.type}</span>
-                  — {ev.distanceM} m du signalement — {ev.date} {ev.heure}
-                </li>
-              ))}
+              {proches.incidents.slice(0, 8).map((ev) => {
+                const { date, heure } = dateHeure(ev.horodatage)
+                return (
+                  <li key={ev.id} className="flex items-center gap-2 text-[12px] text-body">
+                    <span className="h-2 w-2 flex-none rounded-full bg-brand-600" />
+                    <span className="font-bold text-ink">{ev.type_incident_libelle}</span>
+                    ({ev.niveau_gravite_libelle.toLowerCase()}) — {ev.distance_metres} m du signalement — {date} {heure}
+                  </li>
+                )
+              })}
             </ul>
           )}
           <p className="m-0 mt-2.5 text-[11.5px] font-semibold text-faint">
-            Nombre d'événements similaires : <span className="font-bold text-ink">{s.evenementsSimilaires}</span>
+            Incidents des boîtiers dans un rayon de {proches ? Math.round(proches.rayon_metres) : '…'} m :{' '}
+            <span className="font-bold text-ink">{proches?.nombre ?? '…'}</span>
           </p>
           <div className="mt-3 flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-3.5 py-3 text-[11px] font-semibold leading-snug text-brand-700">
             <span className="ic mt-0.5 flex-none text-base">info</span>
@@ -403,15 +447,17 @@ export function SignalementsPage() {
                 <input
                   type="radio"
                   name={`correspondance-${s.id}`}
-                  checked={s.correspondance === c}
-                  onChange={() => handleCorrespondance(s.id, c)}
+                  checked={correspondance === c}
+                  onChange={() => setCorrespondance(c)}
                   className="h-4 w-4 accent-brand-600"
                 />
                 {CORRESPONDANCE_LABEL[c]}
               </label>
             ))}
           </div>
-          <p className="m-0 mb-1.5 mt-4 text-[11.5px] font-bold text-faint">Observation de l'administrateur</p>
+          <p className="m-0 mb-1.5 mt-4 text-[11.5px] font-bold text-faint">
+            Observation de l'administrateur (jointe à la décision, obligatoire pour un rejet)
+          </p>
           <textarea
             value={observationDraft}
             onChange={(e) => setObservationDraft(e.target.value)}
@@ -427,51 +473,51 @@ export function SignalementsPage() {
             Historique
           </p>
           <ul className="flex flex-col gap-2.5">
-            {s.historique.map((h, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-[12px]">
-                <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-brand-600" />
-                <span className="text-faint">{h.date} {h.heure} —</span>
-                <span className="text-body">{h.texte}</span>
-              </li>
-            ))}
+            <li className="flex items-start gap-2.5 text-[12px]">
+              <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-brand-600" />
+              <span className="text-faint">{s.date} {s.heure} —</span>
+              <span className="text-body">Signalement envoyé par le conducteur</span>
+            </li>
+            {historique.map((h) => {
+              const { date, heure } = dateHeure(h.date)
+              return (
+                <li key={h.id} className="flex items-start gap-2.5 text-[12px]">
+                  <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-brand-600" />
+                  <span className="text-faint">{date} {heure} —</span>
+                  <span className="text-body">
+                    {h.statut_precedent_libelle} → {h.statut_nouveau_libelle} par {h.acteur_nom ?? 'compte supprimé'} (
+                    {ROLE_LIBELLE[h.role_acteur] ?? h.role_acteur}){h.commentaire ? ` : « ${h.commentaire} »` : ''}
+                  </span>
+                </li>
+              )
+            })}
           </ul>
         </section>
 
         <section className="mx-6 mt-4 flex flex-wrap gap-2.5">
           <button
             type="button"
-            onClick={() => handleAjouterObservation(s.id)}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-line bg-white px-4 py-2.5 text-[12.5px] font-bold text-ink hover:bg-page"
-          >
-            <span className="ic text-base">add_comment</span>
-            Ajouter une observation
-          </button>
-          <button
-            type="button"
             onClick={() => handleValider(s.id)}
-            disabled={s.statut === 'valide'}
+            disabled={envoi || decisionPrise}
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-success-600 px-4 py-2.5 text-[12.5px] font-bold text-success-600 hover:bg-success-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="ic text-base">check_circle</span>
-            Valider le signalement
+            Valider techniquement
           </button>
           <button
             type="button"
             onClick={() => handleRejeter(s.id)}
-            disabled={s.statut === 'rejete'}
+            disabled={envoi || decisionPrise}
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-danger-600 px-4 py-2.5 text-[12.5px] font-bold text-danger-600 hover:bg-danger-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="ic text-base">cancel</span>
             Rejeter le signalement
           </button>
-          <button
-            type="button"
-            onClick={() => handleTransmettreAnaser(s.id)}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-brand-600 px-4 py-2.5 text-[12.5px] font-bold text-brand-600 hover:bg-brand-50"
-          >
-            <span className="ic text-base">forward</span>
-            Transmettre à l'ANASER
-          </button>
+          {erreurAction && <p className="m-0 basis-full text-xs font-semibold text-danger-600">{erreurAction}</p>}
+          <p className="m-0 basis-full text-[11.5px] text-faint">
+            Un signalement validé renforce la zone à risque correspondante ; la reconnaissance officielle reste à
+            l'ANASER. L'ANASER consulte les signalements sans l'identité du conducteur.
+          </p>
         </section>
       </div>
     )
@@ -489,8 +535,9 @@ export function SignalementsPage() {
               Signalements
             </h1>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-body">
-              Signalements transmis par les conducteurs de votre région.
+              {national ? 'Signalements transmis par les conducteurs de tout le pays.' : 'Signalements transmis par les conducteurs de votre région.'}
             </p>
+            {erreur && <p className="mt-1.5 text-xs font-semibold text-danger-600">{erreur}</p>}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -501,7 +548,7 @@ export function SignalementsPage() {
           </span>
           <button
             type="button"
-            onClick={() => setLastRefresh(formatNow())}
+            onClick={() => void recharger()}
             className="flex items-center gap-2 whitespace-nowrap rounded-full border border-line bg-white px-3.5 py-2.5 text-left text-xs font-bold text-ink transition-colors hover:bg-page"
           >
             <span>

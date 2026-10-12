@@ -30,7 +30,7 @@ export function ClientLayout() {
       cta={{
         label: 'Signaler un danger',
         icon: 'report',
-        onClick: () => navigate(PATHS.client.signalements),
+        onClick: () => navigate(`${PATHS.client.signalements}?nouveau=1`),
       }}
       userInitials={initials}
       userName={user ? `${user.firstName} ${user.lastName}` : ''}

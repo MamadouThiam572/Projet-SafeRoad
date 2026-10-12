@@ -482,6 +482,7 @@ export function AccueilPage() {
 
               <button
                 type="button"
+                onClick={() => navigate(`${PATHS.client.signalements}?nouveau=1`)}
                 className="mt-1 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[11px] bg-danger-600 text-[13.5px] font-bold text-white transition-colors hover:bg-danger-700"
               >
                 <span className="ic text-lg">add</span>

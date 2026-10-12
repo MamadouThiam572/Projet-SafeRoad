@@ -276,7 +276,8 @@ async function authorizedFetch<T>(path: string, options: RequestInit = {}, retry
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      // Un FormData (photo jointe) porte son propre Content-Type multipart, avec sa frontière.
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -524,6 +525,91 @@ export interface AlerteConducteurApi {
 
 export function getAlertesConducteur(): Promise<AlerteConducteurApi[]> {
   return authorizedFetch('/conducteur/alertes/')
+}
+
+// ---------------------------------------------------------------------------
+// Signalements : dangers déclarés par les conducteurs (position du téléphone, photo
+// facultative). La région est déduite du GPS par le backend. Un signalement validé ne fait
+// que renforcer une zone : les données des boîtiers restent prioritaires.
+// ---------------------------------------------------------------------------
+
+export type TypeDanger = 'nid_de_poule' | 'chaussee_degradee' | 'signalisation_absente' | 'chaussee_inondee' | 'obstacle' | 'autre'
+export type StatutSignalementApi = 'a_verifier' | 'en_verification' | 'valide' | 'rejete'
+
+export interface SignalementApi {
+  id: number
+  conducteur?: string | null
+  conducteur_nom?: string | null
+  boitier: string | null
+  type_danger: TypeDanger
+  type_danger_libelle: string
+  description: string
+  latitude: number
+  longitude: number
+  precision_metres: number | null
+  region: string
+  region_libelle: string
+  localite: string
+  photo_url: string | null
+  statut: StatutSignalementApi
+  statut_libelle: string
+  date_creation: string
+  date_maj: string
+}
+
+export interface HistoriqueSignalementApi {
+  id: number
+  statut_precedent_libelle: string
+  statut_nouveau: StatutSignalementApi
+  statut_nouveau_libelle: string
+  acteur_nom: string | null
+  role_acteur: string
+  commentaire: string
+  date: string
+}
+
+export interface IncidentsProchesApi {
+  rayon_metres: number
+  nombre: number
+  incidents: { id: number; type_incident_libelle: string; niveau_gravite_libelle: string; horodatage: string; distance_metres: number }[]
+}
+
+/** Conducteur : les siens ; admin régional : sa région ; super admin et ANASER : tous. */
+export function getSignalements(): Promise<SignalementApi[]> {
+  return authorizedFetch('/signalements/')
+}
+
+/** `donnees` : type_danger, description, latitude, longitude, precision_metres, localite, photo. */
+export function creerSignalement(donnees: FormData): Promise<SignalementApi> {
+  return authorizedFetch('/signalements/', { method: 'POST', body: donnees })
+}
+
+export function supprimerSignalement(id: number): Promise<null> {
+  return authorizedFetch(`/signalements/${id}/`, { method: 'DELETE' })
+}
+
+export function changerStatutSignalement(id: number, statut: StatutSignalementApi, commentaire = ''): Promise<SignalementApi> {
+  return authorizedFetch(`/signalements/${id}/statut/`, { method: 'PATCH', body: JSON.stringify({ statut, commentaire }) })
+}
+
+export function getHistoriqueSignalement(id: number): Promise<HistoriqueSignalementApi[]> {
+  return authorizedFetch(`/signalements/${id}/historique/`)
+}
+
+export function getIncidentsProches(id: number): Promise<IncidentsProchesApi> {
+  return authorizedFetch(`/signalements/${id}/incidents-proches/`)
+}
+
+/**
+ * La photo n'est servie qu'avec le jeton (jamais en accès public) : une balise <img> ne peut
+ * pas l'envoyer, on la télécharge donc ici et on renvoie une adresse locale (blob:).
+ */
+export async function chargerPhotoSignalement(url: string): Promise<string> {
+  const appel = (jeton: string | null) => fetch(url, { headers: jeton ? { Authorization: `Bearer ${jeton}` } : {} })
+  let res = await appel(getAccessToken())
+  if (res.status === 401 && (await refreshSession())) res = await appel(getAccessToken())
+  if (!res.ok) throw new ApiError('Photo indisponible.', res.status)
+  return URL.createObjectURL(await res.blob())
 }
 
 // ---------------------------------------------------------------------------
