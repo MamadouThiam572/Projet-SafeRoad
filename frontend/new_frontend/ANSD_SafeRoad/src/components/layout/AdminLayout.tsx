@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { regionLabel } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 import { DashboardLayout } from './DashboardLayout'
 import type { SidebarNavItem } from './Sidebar'
@@ -28,11 +29,11 @@ export function AdminLayout() {
       navItems={NAV_ITEMS}
       homeTo={PATHS.admin.root}
       roleLabel="Administrateur régional"
-      roleMeta={user?.region}
+      roleMeta={user?.region ? regionLabel(user.region) : undefined}
       userInitials={initials}
       userName={user ? `${user.firstName} ${user.lastName}` : ''}
-      userRole={user?.region ? `Admin Régional · ${user.region}` : 'Admin Régional'}
-      onProfileClick={() => {}}
+      userRole={user?.region ? `Admin Régional · ${regionLabel(user.region)}` : 'Admin Régional'}
+      onProfileClick={() => navigate(PATHS.admin.profil)}
       onLogoutClick={() => {
         logout()
         navigate(PATHS.connexion)

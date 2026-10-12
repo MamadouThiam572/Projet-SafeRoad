@@ -80,6 +80,7 @@ export function AppRoutes() {
           <Route path={PATHS.admin.signalements} element={<AdminSignalementsPage />} />
           <Route path={PATHS.admin.zones} element={<AdminZonesPage />} />
           <Route path={PATHS.admin.demandes} element={<DemandesPage />} />
+          <Route path={PATHS.admin.profil} element={<AnaserProfilPage />} />
           <Route path={PATHS.admin.alertes} element={<AdminAlertesPage />} />
           {/* Même page que le super admin, limitée à la région (backend). L'ancienne maquette
               pages/admin/BoitiersPage.tsx est mise de côté. */}
@@ -134,6 +135,7 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.zones} element={<AdminZonesPage national />} />
           <Route path={PATHS.superAdmin.demandes} element={<DemandesPage national />} />
           <Route path={PATHS.superAdmin.messages} element={<MessagesPage />} />
+          <Route path={PATHS.superAdmin.profil} element={<AnaserProfilPage />} />
           <Route path={PATHS.superAdmin.statistiques} element={<PageStub title="Statistiques" />} />
           <Route path={PATHS.superAdmin.notifications} element={<PageStub title="Notifications" />} />
           <Route path={PATHS.superAdmin.rapports} element={<PageStub title="Rapports" />} />

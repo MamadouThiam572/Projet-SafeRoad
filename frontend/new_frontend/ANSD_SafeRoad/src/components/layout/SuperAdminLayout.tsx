@@ -42,7 +42,7 @@ export function SuperAdminLayout() {
       userInitials={initials}
       userName={user ? `${user.firstName} ${user.lastName}` : ''}
       userRole="Super Admin"
-      onProfileClick={() => {}}
+      onProfileClick={() => navigate(PATHS.superAdmin.profil)}
       onLogoutClick={() => {
         logout()
         navigate(PATHS.connexion)

@@ -32,6 +32,7 @@ export const PATHS = {
     alertes: '/admin/alertes',
     boitiers: '/admin/boitiers',
     demandes: '/admin/demandes',
+    profil: '/admin/profil',
     historique: '/admin/historique',
   },
   anaser: {
@@ -48,6 +49,7 @@ export const PATHS = {
     boitiers: '/super-admin/boitiers',
     demandes: '/super-admin/demandes',
     messages: '/super-admin/messages',
+    profil: '/super-admin/profil',
     monitoring: '/super-admin/monitoring',
     incidents: '/super-admin/incidents',
     signalements: '/super-admin/signalements',

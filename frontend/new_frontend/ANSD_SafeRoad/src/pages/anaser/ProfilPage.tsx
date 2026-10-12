@@ -1,7 +1,16 @@
 import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { regionLabel } from '@/lib/regions'
 import { ChangementMotDePasse } from '@/pages/site/MotDePassePages'
 
+const ROLE: Record<string, string> = { anaser: 'ANASER', sous_admin: 'administrateur régional', super_admin: 'super administrateur' }
+const ROLE_DETAIL: Record<string, string> = {
+  anaser: 'ANASER — Agence nationale de la sécurité routière',
+  sous_admin: 'Administrateur régional',
+  super_admin: 'Super administrateur de la plateforme',
+}
+
+/** Profil du personnel (ANASER, admin régional, super admin) : mêmes infos, même changement de mot de passe. */
 export function ProfilPage() {
   const { user } = useAuth()
   const [changementMotDePasse, setChangementMotDePasse] = useState(false)
@@ -13,7 +22,7 @@ export function ProfilPage() {
       <h1 className="text-[clamp(23px,2.8vw,30px)] font-extrabold leading-[1.15] tracking-[-0.026em] text-ink">
         Mon profil
       </h1>
-      <p className="mt-2.5 text-sm leading-6 text-body">Informations de votre compte ANASER.</p>
+      <p className="mt-2.5 text-sm leading-6 text-body">Informations de votre compte {ROLE[user.role] ?? ''}.</p>
 
       <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-card">
         <div>
@@ -28,11 +37,13 @@ export function ProfilPage() {
         </div>
         <div>
           <p className="m-0 text-[11px] font-bold uppercase tracking-wide text-faint">Rôle</p>
-          <p className="m-0 mt-1 text-sm font-bold text-ink">ANASER — Agence nationale de la sécurité routière</p>
+          <p className="m-0 mt-1 text-sm font-bold text-ink">{ROLE_DETAIL[user.role] ?? user.role}</p>
         </div>
         <div>
           <p className="m-0 text-[11px] font-bold uppercase tracking-wide text-faint">Portée</p>
-          <p className="m-0 mt-1 text-sm font-bold text-ink">Vue nationale (toutes régions)</p>
+          <p className="m-0 mt-1 text-sm font-bold text-ink">
+            {user.role === 'sous_admin' ? `Région de ${regionLabel(user.region)}` : 'Vue nationale (toutes régions)'}
+          </p>
         </div>
       </div>
 
