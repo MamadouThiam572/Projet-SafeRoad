@@ -5,6 +5,9 @@ import newsBoitiersUrl from '@/assets/images/news-boitiers-iot.png'
 import newsModeleIaUrl from '@/assets/images/news-modele-ia.png'
 import { DemoPanel } from '@/components/site/DemoPanel'
 import { SafeRoadMap } from '@/components/site/SafeRoadMap'
+import { riskZoneDepuisApi } from '@/data/riskZones'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { getZonesPubliques } from '@/lib/api'
 import { Reveal } from '@/components/site/Reveal'
 import { useCountUp } from '@/hooks/useCountUp'
 import { useInView } from '@/hooks/useInView'
@@ -65,6 +68,12 @@ function KpiStat({ value, decimals = 0, suffix = '', label, period }: (typeof KP
       <p className="text-label-secondary m-0 mt-1">{period}</p>
     </div>
   )
+}
+
+/** Aperçu de la carte : les vraies zones reconnues par l'ANASER (vide tant qu'il n'y en a pas). */
+function ZonesReconnuesApercu() {
+  const { donnees } = useEnDirect(getZonesPubliques, 300_000)
+  return <SafeRoadMap variant="compact" zones={(donnees ?? []).map(riskZoneDepuisApi)} />
 }
 
 export function AccueilPage() {
@@ -138,7 +147,7 @@ export function AccueilPage() {
             </div>
           </div>
 
-          <SafeRoadMap variant="compact" />
+          <ZonesReconnuesApercu />
         </div>
       </section>
 

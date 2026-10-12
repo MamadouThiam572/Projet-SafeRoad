@@ -1,3 +1,5 @@
+import type { ZoneApi } from '@/lib/api'
+
 export type ZoneStatus = 'validee' | 'observation' | 'normale'
 
 export interface RiskZone {
@@ -11,9 +13,9 @@ export interface RiskZone {
 }
 
 export const STATUS_META: Record<ZoneStatus, { color: string; label: string; dotClass: string }> = {
-  validee: { color: '#dc3a2f', label: 'Validée', dotClass: 'bg-danger-600' },
-  observation: { color: '#e8940c', label: 'En observation', dotClass: 'bg-warning-600' },
-  normale: { color: '#1f9d55', label: 'Normale', dotClass: 'bg-success-600' },
+  validee: { color: '#dc3a2f', label: 'Zone critique', dotClass: 'bg-danger-600' },
+  observation: { color: '#e8940c', label: 'Zone de vigilance', dotClass: 'bg-warning-600' },
+  normale: { color: '#1f9d55', label: 'Risque modéré', dotClass: 'bg-success-600' },
 }
 
 /**
@@ -98,3 +100,22 @@ export const DEMO_ZONES: RiskZone[] = [
     note: 'Aucune récurrence notable sur les 90 derniers jours.',
   },
 ]
+
+const NIVEAU_VERS_STATUT: Record<ZoneApi['niveau_danger'], ZoneStatus> = {
+  critique: 'validee',
+  vigilance: 'observation',
+  normale: 'normale',
+}
+
+/** Zone reconnue par l'ANASER (API publique) -> marqueur de l'aperçu de la page d'accueil. */
+export function riskZoneDepuisApi(z: ZoneApi): RiskZone {
+  return {
+    id: String(z.id),
+    name: z.nom || `Zone #${z.id}`,
+    region: z.region_libelle ?? '',
+    lat: z.latitude_centre,
+    lng: z.longitude_centre,
+    status: NIVEAU_VERS_STATUT[z.niveau_danger],
+    note: `${z.nombre_incidents} incidents détectés · reconnue par l'ANASER`,
+  }
+}

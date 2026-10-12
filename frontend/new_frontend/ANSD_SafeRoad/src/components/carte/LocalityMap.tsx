@@ -59,37 +59,54 @@ function LocalityCard({ loc }: { loc: Locality }) {
       </div>
       <p className="m-0 mt-1.5 text-[14px] font-extrabold text-ink">{loc.name}</p>
       <p className="m-0 text-[11.5px] text-body">
-        {loc.region} · {ROAD_TYPE_LABELS[loc.roadType]}
+        {loc.region}
+        {loc.roadType ? ` · ${ROAD_TYPE_LABELS[loc.roadType]}` : ''}
       </p>
-      <p className="m-0 mt-0.5 text-[11px] text-faint">{loc.axisRange}</p>
+      {loc.axisRange && <p className="m-0 mt-0.5 text-[11px] text-faint">{loc.axisRange}</p>}
 
       <div className="mt-3 grid grid-cols-2 gap-y-2">
         <div>
           <p className="m-0 text-[15px] font-extrabold text-ink">{loc.incidents30d}</p>
-          <p className="m-0 text-[10px] text-faint">incidents / 30 j</p>
+          <p className="m-0 text-[10px] text-faint">{loc.reconnueLe ? 'incidents détectés' : 'incidents / 30 j'}</p>
         </div>
-        <div>
-          <p className="m-0 text-[15px] font-extrabold text-ink">{loc.alerts30d}</p>
-          <p className="m-0 text-[10px] text-faint">alertes</p>
-        </div>
-        <div>
-          <p className="m-0 text-[15px] font-extrabold text-ink">{loc.events30d}</p>
-          <p className="m-0 text-[10px] text-faint">événements</p>
-        </div>
-        <div>
-          <EvolutionValue pct={loc.evolutionPct} />
-          <p className="m-0 text-[10px] text-faint">évolution / 30 j</p>
-        </div>
+        {loc.signalements !== undefined && (
+          <div>
+            <p className="m-0 text-[15px] font-extrabold text-ink">{loc.signalements}</p>
+            <p className="m-0 text-[10px] text-faint">signalements</p>
+          </div>
+        )}
+        {loc.alerts30d !== undefined && (
+          <div>
+            <p className="m-0 text-[15px] font-extrabold text-ink">{loc.alerts30d}</p>
+            <p className="m-0 text-[10px] text-faint">alertes</p>
+          </div>
+        )}
+        {loc.events30d !== undefined && (
+          <div>
+            <p className="m-0 text-[15px] font-extrabold text-ink">{loc.events30d}</p>
+            <p className="m-0 text-[10px] text-faint">événements</p>
+          </div>
+        )}
+        {loc.evolutionPct !== undefined && (
+          <div>
+            <EvolutionValue pct={loc.evolutionPct} />
+            <p className="m-0 text-[10px] text-faint">évolution / 30 j</p>
+          </div>
+        )}
       </div>
 
-      <p className="m-0 mt-3 text-[11px] leading-[1.5] text-body">
-        <span className="font-bold text-ink">Périodes critiques : </span>
-        {loc.criticalPeriods}
-      </p>
-      <p className="m-0 mt-1 text-[11px] text-body">
-        <span className="font-bold text-ink">Boîtiers : </span>
-        {loc.boitiers}
-      </p>
+      {loc.criticalPeriods && (
+        <p className="m-0 mt-3 text-[11px] leading-[1.5] text-body">
+          <span className="font-bold text-ink">Périodes critiques : </span>
+          {loc.criticalPeriods}
+        </p>
+      )}
+      {loc.boitiers !== undefined && (
+        <p className="m-0 mt-1 text-[11px] text-body">
+          <span className="font-bold text-ink">Boîtiers : </span>
+          {loc.boitiers}
+        </p>
+      )}
       <p className="m-0 mt-1 text-[11px] text-body">
         <span className="font-bold text-ink">Dernière détection : </span>
         {loc.lastDetection}
@@ -105,7 +122,13 @@ function LocalityCard({ loc }: { loc: Locality }) {
         </div>
       )}
 
-      {loc.status === 'validee' && (
+      {loc.reconnueLe && (
+        <div className="mt-3 border-t border-line pt-2.5">
+          <p className="m-0 text-[11px] font-bold text-success-600">Zone reconnue officiellement par l'ANASER</p>
+        </div>
+      )}
+
+      {!loc.reconnueLe && loc.status === 'validee' && (
         <div className="mt-3 border-t border-line pt-2.5">
           <p className="m-0 text-[11px] text-body">
             <span className="font-bold text-ink">Validée par : </span>

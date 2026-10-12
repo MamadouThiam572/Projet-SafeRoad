@@ -1,36 +1,25 @@
 import { useMemo, useRef, useState } from 'react'
 import { LocalityMap, type LocalityMapHandle } from '@/components/carte/LocalityMap'
-import {
-  LOCALITIES,
-  REGIONS,
-  ROAD_TYPE_LABELS,
-  STATUS_META,
-  type RoadType,
-  type ZoneStatus,
-} from '@/data/localities'
+import { localiteDepuisZone, STATUS_META, type ZoneStatus } from '@/data/localities'
+import { useEnDirect } from '@/hooks/useEnDirect'
 import { useNarrowGrid } from '@/hooks/useNarrowGrid'
+import { getZonesPubliques } from '@/lib/api'
+import { REGIONS } from '@/lib/regions'
 
-const ROAD_TYPES: RoadType[] = ['autoroute', 'nationale', 'regionale', 'voirie_urbaine']
-const STATUSES: ZoneStatus[] = ['validee', 'a_examiner', 'observation', 'normale']
-const PERIODS = ['24 dernières heures', '7 derniers jours', '30 derniers jours', '12 derniers mois'] as const
+/** Niveaux de danger des zones reconnues (critique, vigilance, modéré). */
+const STATUSES: ZoneStatus[] = ['validee', 'observation', 'normale']
 
 const REGION_ALL = 'Toutes les régions'
-const ROAD_TYPE_ALL = 'Tous les types'
-const STATUS_ALL = 'Tous les statuts'
+const STATUS_ALL = 'Tous les niveaux'
 
 interface FilterState {
   region: string
-  roadType: string
   status: string
-  /** Présent mais inopérant — voir fiche §6 : le registre ne porte qu'un agrégat sur 30 jours. */
-  period: string
 }
 
 const DEFAULT_FILTERS: FilterState = {
   region: REGION_ALL,
-  roadType: ROAD_TYPE_ALL,
   status: STATUS_ALL,
-  period: '30 derniers jours',
 }
 
 function FilterSelect({
@@ -95,6 +84,9 @@ export function CartePage() {
   const [applied, setApplied] = useState<FilterState>(DEFAULT_FILTERS)
   const [gridRef, isNarrow] = useNarrowGrid<HTMLDivElement>(820)
   const mapRef = useRef<LocalityMapHandle>(null)
+  // Zones reconnues par l'ANASER, rechargées toutes les 2 minutes.
+  const { donnees, erreur } = useEnDirect(getZonesPubliques, 120_000)
+  const LOCALITIES = useMemo(() => (donnees ?? []).map(localiteDepuisZone), [donnees])
 
   /*
    * Un seul prédicat, appliqué une fois sur « Appliquer » plutôt qu'à
@@ -105,18 +97,17 @@ export function CartePage() {
   const filtered = useMemo(() => {
     return LOCALITIES.filter((loc) => {
       if (applied.region !== REGION_ALL && loc.region !== applied.region) return false
-      if (applied.roadType !== ROAD_TYPE_ALL && loc.roadType !== applied.roadType) return false
       if (applied.status !== STATUS_ALL && loc.status !== applied.status) return false
       return true
     })
-  }, [applied])
+  }, [applied, LOCALITIES])
 
   const counters = useMemo(
     () => ({
-      validee: filtered.filter((l) => l.status === 'validee').length,
-      aExaminer: filtered.filter((l) => l.status === 'a_examiner').length,
-      observation: filtered.filter((l) => l.status === 'observation').length,
-      boitiers: filtered.reduce((sum, l) => sum + l.boitiers, 0),
+      total: filtered.length,
+      critiques: filtered.filter((l) => l.status === 'validee').length,
+      vigilance: filtered.filter((l) => l.status === 'observation').length,
+      incidents: filtered.reduce((sum, l) => sum + l.incidents30d, 0),
     }),
     [filtered],
   )
@@ -129,7 +120,8 @@ export function CartePage() {
           <span className="text-kicker text-brand-200">Carte publique</span>
           <h1 className="text-section-title mt-2 text-white">Carte des zones à risque</h1>
           <p className="mt-2 max-w-2xl text-[15px] leading-[1.7] text-white/80">
-            Consultez en temps réel les zones à risque identifiées sur le réseau routier sénégalais.
+            Les zones à risque du réseau routier sénégalais reconnues officiellement par l'ANASER, à partir des données
+            des boîtiers SafeRoad et des signalements des conducteurs.
           </p>
         </div>
       </div>
@@ -151,31 +143,16 @@ export function CartePage() {
                 label="Région"
                 value={draft.region}
                 onChange={(v) => setDraft((d) => ({ ...d, region: v }))}
-                options={[REGION_ALL, ...REGIONS].map((r) => ({ value: r, label: r }))}
+                options={[REGION_ALL, ...REGIONS.map((r) => r.label)].map((r) => ({ value: r, label: r }))}
               />
               <FilterSelect
-                label="Type de route"
-                value={draft.roadType}
-                onChange={(v) => setDraft((d) => ({ ...d, roadType: v }))}
-                options={[
-                  { value: ROAD_TYPE_ALL, label: ROAD_TYPE_ALL },
-                  ...ROAD_TYPES.map((t) => ({ value: t, label: ROAD_TYPE_LABELS[t] })),
-                ]}
-              />
-              <FilterSelect
-                label="Statut de la zone"
+                label="Niveau de danger"
                 value={draft.status}
                 onChange={(v) => setDraft((d) => ({ ...d, status: v }))}
                 options={[
                   { value: STATUS_ALL, label: STATUS_ALL },
                   ...STATUSES.map((s) => ({ value: s, label: STATUS_META[s].label })),
                 ]}
-              />
-              <FilterSelect
-                label="Période"
-                value={draft.period}
-                onChange={(v) => setDraft((d) => ({ ...d, period: v }))}
-                options={PERIODS.map((p) => ({ value: p, label: p }))}
               />
             </div>
 
@@ -205,7 +182,7 @@ export function CartePage() {
                 <span className="ic flex-none text-2xl text-danger-600">place</span>
                 <span className="text-[13px] font-semibold text-body">{STATUS_META.validee.label}</span>
               </div>
-              {(['observation', 'a_examiner', 'normale'] as ZoneStatus[]).map((s) => (
+              {(['observation', 'normale'] as ZoneStatus[]).map((s) => (
                 <div key={s} className="flex items-center gap-2.5">
                   <span
                     className={`flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full text-[12px] font-extrabold text-white ${STATUS_META[s].bgClass}`}
@@ -216,12 +193,15 @@ export function CartePage() {
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[11.5px] text-faint">Cliquez sur un marqueur pour ouvrir la fiche de la localité.</p>
+            <p className="mt-3 text-[11.5px] text-faint">Cliquez sur un marqueur pour ouvrir la fiche de la zone.</p>
           </div>
 
           <div className="rounded-[18px] border border-line bg-white p-[22px] shadow-card">
             <p className="text-card-title m-0 text-ink">Zones affichées</p>
-            <p className="mt-1 text-[12px] text-faint">{filtered.length} localités correspondant aux filtres</p>
+            <p className="mt-1 text-[12px] text-faint">
+              {donnees ? `${filtered.length} zone${filtered.length > 1 ? 's' : ''} correspondant aux filtres` : 'Chargement des zones…'}
+            </p>
+            {erreur && <p className="mt-1 text-[12px] font-semibold text-danger-600">{erreur}</p>}
             <div className="mt-3 flex max-h-[330px] flex-col gap-1 overflow-y-auto">
               {filtered.map((loc) => (
                 <button
@@ -245,7 +225,9 @@ export function CartePage() {
                 </button>
               ))}
               {filtered.length === 0 && (
-                <p className="px-3 py-4 text-center text-[12.5px] text-faint">Aucune localité ne correspond à ces filtres.</p>
+                <p className="px-3 py-4 text-center text-[12.5px] text-faint">
+                  {LOCALITIES.length === 0 ? "Aucune zone n'est encore reconnue par l'ANASER." : 'Aucune zone ne correspond à ces filtres.'}
+                </p>
               )}
             </div>
           </div>
@@ -255,29 +237,29 @@ export function CartePage() {
         <div className="flex flex-col gap-[14px]">
           <div className="grid gap-[14px] [grid-template-columns:repeat(auto-fit,minmax(140px,1fr))]">
             <CounterCard
-              value={counters.validee}
-              label="Zones à risque validées"
+              value={counters.total}
+              label="Zones reconnues"
               toneClass="text-danger-600"
               bgClass="bg-danger-50"
               borderClass="border-l-danger-600"
             />
             <CounterCard
-              value={counters.aExaminer}
-              label="Localités à examiner"
+              value={counters.critiques}
+              label="Zones critiques"
               toneClass="text-[#7c3aed]"
               bgClass="bg-[#7c3aed]/10"
               borderClass="border-l-[#7c3aed]"
             />
             <CounterCard
-              value={counters.observation}
-              label="En observation"
+              value={counters.vigilance}
+              label="Zones de vigilance"
               toneClass="text-warning-600"
               bgClass="bg-warning-50"
               borderClass="border-l-warning-600"
             />
             <CounterCard
-              value={counters.boitiers}
-              label="Boîtiers actifs"
+              value={counters.incidents}
+              label="Incidents détectés"
               toneClass="text-ink"
               bgClass="bg-brand-50"
               borderClass="border-l-brand-600"
@@ -289,8 +271,8 @@ export function CartePage() {
           </div>
 
           <p className="text-[11.5px] text-faint">
-            Données de démonstration. L'architecture prévoit le branchement de la couche zones sur l'API SafeRoad
-            (mêmes champs, mêmes statuts, dernière détection en direct).
+            Seules les zones reconnues par l'ANASER sont publiques. Les zones encore en vérification par les
+            administrateurs n'apparaissent pas ici.
           </p>
         </div>
       </div>

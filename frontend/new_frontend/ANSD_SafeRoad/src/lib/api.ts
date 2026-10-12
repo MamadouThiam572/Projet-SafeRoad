@@ -42,6 +42,17 @@ async function envoyerPublic<T>(path: string, corps: unknown, defaut: string): P
   return res.json()
 }
 
+/**
+ * Zones de la carte publique : uniquement celles reconnues par l'ANASER (règle du backend pour
+ * un visiteur). Appel volontairement SANS jeton, même connecté : un compte de gestion verrait
+ * sinon aussi les zones encore en validation.
+ */
+export async function getZonesPubliques(): Promise<ZoneApi[]> {
+  const res = await fetch(`${API_BASE}/zones/`)
+  if (!res.ok) throw new ApiError('Carte indisponible pour le moment.', res.status)
+  return res.json()
+}
+
 export type SujetContact = 'question' | 'signalement' | 'suggestion' | 'partenariat' | 'support' | 'autre'
 
 /** Formulaire public Contact (sans compte, limité par IP) : lu par le super admin. */

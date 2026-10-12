@@ -1,3 +1,5 @@
+import type { ZoneApi } from '@/lib/api'
+
 export type ZoneStatus = 'validee' | 'a_examiner' | 'observation' | 'normale'
 export type RoadType = 'autoroute' | 'nationale' | 'regionale' | 'voirie_urbaine'
 
@@ -6,7 +8,7 @@ export const STATUS_META: Record<
   { label: string; color: string; textClass: string; bgClass: string; glyph: string; baseRadiusM: number }
 > = {
   validee: {
-    label: 'Zone à risque validée',
+    label: 'Zone critique',
     color: '#dc3a2f',
     textClass: 'text-danger-600',
     bgClass: 'bg-danger-600',
@@ -22,7 +24,7 @@ export const STATUS_META: Record<
     baseRadiusM: 900,
   },
   observation: {
-    label: 'Maintenue en observation',
+    label: 'Zone de vigilance',
     color: '#e8940c',
     textClass: 'text-warning-600',
     bgClass: 'bg-warning-600',
@@ -30,7 +32,7 @@ export const STATUS_META: Record<
     baseRadiusM: 900,
   },
   normale: {
-    label: 'Zone normale',
+    label: 'Zone à risque modéré',
     color: '#1f9d55',
     textClass: 'text-success-600',
     bgClass: 'bg-success-600',
@@ -70,21 +72,26 @@ export interface Locality {
   id: string
   name: string
   region: string
-  roadType: RoadType
+  /** Les champs facultatifs ne sont pas (encore) fournis par l'API publique des zones. */
+  roadType?: RoadType
   lat: number
   lng: number
   /** Portion de route concernée, ex. « PK 8 – PK 14, autoroute à péage » */
-  axisRange: string
+  axisRange?: string
   status: ZoneStatus
   incidents30d: number
-  alerts30d: number
-  events30d: number
+  alerts30d?: number
+  events30d?: number
   /** Signé : positif = dégradation, négatif = amélioration sur 30 jours */
-  evolutionPct: number
-  criticalPeriods: string
-  boitiers: number
+  evolutionPct?: number
+  criticalPeriods?: string
+  boitiers?: number
   lastDetection: string
   riskTypes: string[]
+  /** Signalements de conducteurs rattachés à la zone (données réelles). */
+  signalements?: number
+  /** Date de reconnaissance / dernière mise à jour (zones réelles reconnues par l'ANASER). */
+  reconnueLe?: string
   /** Uniquement pour une zone validée */
   validator?: string
   validatedAt?: string
@@ -372,3 +379,29 @@ export const LOCALITIES: Locality[] = [
     riskTypes: [],
   },
 ]
+
+const NIVEAU_VERS_STATUT: Record<ZoneApi['niveau_danger'], ZoneStatus> = {
+  critique: 'validee',
+  vigilance: 'observation',
+  normale: 'normale',
+}
+
+/** Zone reconnue par l'ANASER (API publique) -> localité de la carte, colorée selon son niveau. */
+export function localiteDepuisZone(z: ZoneApi): Locality {
+  const t = new Date(z.date_maj)
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  const date = `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()}`
+  return {
+    id: String(z.id),
+    name: z.nom || `Zone #${z.id}`,
+    region: z.region_libelle ?? 'Région inconnue',
+    lat: z.latitude_centre,
+    lng: z.longitude_centre,
+    status: NIVEAU_VERS_STATUT[z.niveau_danger],
+    incidents30d: z.nombre_incidents,
+    signalements: z.nombre_signalements,
+    lastDetection: `mise à jour le ${date}`,
+    riskTypes: [],
+    reconnueLe: date,
+  }
+}
