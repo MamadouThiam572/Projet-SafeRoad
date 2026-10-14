@@ -15,6 +15,7 @@ import {
 } from '@/data/adminSignalements'
 import { useEnDirect } from '@/hooks/useEnDirect'
 import {
+  ajouterObservationSignalement,
   ApiError,
   changerStatutSignalement,
   chargerPhotoSignalement,
@@ -23,6 +24,7 @@ import {
   getSignalements,
   type HistoriqueSignalementApi,
   type IncidentsProchesApi,
+  transmettreSignalementAnaser,
 } from '@/lib/api'
 import { regionLabel } from '@/lib/regions'
 
@@ -224,6 +226,44 @@ export function SignalementsPage({ national = false }: { national?: boolean }) {
     }
   }
 
+  /** Observation seule (sans décision), tracée dans l'historique. */
+  const handleAjouterObservation = async (id: string) => {
+    const sig = signalements.find((x) => x.id === id)
+    const texte = observationDraft.trim()
+    if (!sig || !texte) {
+      setErreurAction("Écrivez d'abord l'observation dans le champ ci-dessus.")
+      return
+    }
+    setEnvoi(true)
+    try {
+      await ajouterObservationSignalement(sig.apiId, texte)
+      setObservationDraft('')
+      setErreurAction('')
+      await recharger()
+    } catch (err) {
+      setErreurAction(err instanceof ApiError ? err.message : 'Observation non enregistrée : serveur injoignable.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  /** Porte le signalement à l'attention de l'ANASER (notification), tracé dans l'historique. */
+  const handleTransmettreAnaser = async (id: string) => {
+    const sig = signalements.find((x) => x.id === id)
+    if (!sig) return
+    setEnvoi(true)
+    try {
+      await transmettreSignalementAnaser(sig.apiId, observationDraft.trim())
+      setObservationDraft('')
+      setErreurAction('')
+      await recharger()
+    } catch (err) {
+      setErreurAction(err instanceof ApiError ? err.message : 'Transmission impossible : serveur injoignable.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
   const handleCommencerVerification = (id: string) => void decider(id, 'en_verification')
   const handleValider = (id: string) => void decider(id, 'valide')
   const handleRejeter = (id: string) => void decider(id, 'rejete')
@@ -320,8 +360,12 @@ export function SignalementsPage({ national = false }: { national?: boolean }) {
                 <dd className="m-0 mt-0.5 font-bold text-ink">{s.conducteur}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-faint">Précision GPS</dt>
-                <dd className="m-0 mt-0.5 font-semibold text-ink">{s.precision != null ? `± ${Math.round(s.precision)} m` : 'Non transmise'}</dd>
+                <dt className="font-semibold text-faint">Véhicule</dt>
+                <dd className="m-0 mt-0.5 font-semibold text-ink">{s.vehicule ?? 'Non renseigné'}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-faint">Téléphone</dt>
+                <dd className="m-0 mt-0.5 font-semibold text-ink">{s.telephone}</dd>
               </div>
               <div>
                 <dt className="font-semibold text-faint">Boîtier</dt>
@@ -485,7 +529,7 @@ export function SignalementsPage({ national = false }: { national?: boolean }) {
                   <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-brand-600" />
                   <span className="text-faint">{date} {heure} —</span>
                   <span className="text-body">
-                    {h.statut_precedent_libelle} → {h.statut_nouveau_libelle} par {h.acteur_nom ?? 'compte supprimé'} (
+                    {h.statut_precedent_libelle === h.statut_nouveau_libelle ? 'Observation' : `${h.statut_precedent_libelle} → ${h.statut_nouveau_libelle}`} par {h.acteur_nom ?? 'compte supprimé'} (
                     {ROLE_LIBELLE[h.role_acteur] ?? h.role_acteur}){h.commentaire ? ` : « ${h.commentaire} »` : ''}
                   </span>
                 </li>
@@ -495,6 +539,15 @@ export function SignalementsPage({ national = false }: { national?: boolean }) {
         </section>
 
         <section className="mx-6 mt-4 flex flex-wrap gap-2.5">
+          <button
+            type="button"
+            onClick={() => void handleAjouterObservation(s.id)}
+            disabled={envoi}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-line bg-white px-4 py-2.5 text-[12.5px] font-bold text-ink hover:bg-page"
+          >
+            <span className="ic text-base">add_comment</span>
+            Ajouter une observation
+          </button>
           <button
             type="button"
             onClick={() => handleValider(s.id)}
@@ -513,11 +566,16 @@ export function SignalementsPage({ national = false }: { national?: boolean }) {
             <span className="ic text-base">cancel</span>
             Rejeter le signalement
           </button>
+          <button
+            type="button"
+            onClick={() => void handleTransmettreAnaser(s.id)}
+            disabled={envoi}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-brand-600 px-4 py-2.5 text-[12.5px] font-bold text-brand-600 hover:bg-brand-50"
+          >
+            <span className="ic text-base">forward</span>
+            Transmettre à l'ANASER
+          </button>
           {erreurAction && <p className="m-0 basis-full text-xs font-semibold text-danger-600">{erreurAction}</p>}
-          <p className="m-0 basis-full text-[11.5px] text-faint">
-            Un signalement validé renforce la zone à risque correspondante ; la reconnaissance officielle reste à
-            l'ANASER. L'ANASER consulte les signalements sans l'identité du conducteur.
-          </p>
         </section>
       </div>
     )

@@ -625,7 +625,9 @@ export interface SignalementApi {
   id: number
   conducteur?: string | null
   conducteur_nom?: string | null
+  conducteur_telephone?: string | null
   boitier: string | null
+  immatriculation?: string | null
   type_danger: TypeDanger
   type_danger_libelle: string
   description: string
@@ -679,6 +681,14 @@ export function changerStatutSignalement(id: number, statut: StatutSignalementAp
 
 export function getHistoriqueSignalement(id: number): Promise<HistoriqueSignalementApi[]> {
   return authorizedFetch(`/signalements/${id}/historique/`)
+}
+
+export function ajouterObservationSignalement(id: number, texte: string): Promise<{ detail: string }> {
+  return authorizedFetch(`/signalements/${id}/observations/`, { method: 'POST', body: JSON.stringify({ texte }) })
+}
+
+export function transmettreSignalementAnaser(id: number, commentaire = ''): Promise<{ detail: string }> {
+  return authorizedFetch(`/signalements/${id}/transmettre-anaser/`, { method: 'POST', body: JSON.stringify({ commentaire }) })
 }
 
 export function getIncidentsProches(id: number): Promise<IncidentsProchesApi> {

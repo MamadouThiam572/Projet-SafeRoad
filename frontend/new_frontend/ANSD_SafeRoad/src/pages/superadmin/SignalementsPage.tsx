@@ -31,7 +31,7 @@ import {
   type Signalement,
 } from '@/data/superAdminSignalements'
 import { useEnDirect } from '@/hooks/useEnDirect'
-import { ApiError, changerStatutSignalement, chargerPhotoSignalement, getHistoriqueSignalement, getIncidents, getSignalements } from '@/lib/api'
+import { ajouterObservationSignalement, ApiError, changerStatutSignalement, chargerPhotoSignalement, getHistoriqueSignalement, getIncidents, getSignalements } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
@@ -681,7 +681,7 @@ export function SignalementsPage() {
       ...prev,
       [id]: lignes.map((h) => ({
         at: stamp(h.date),
-        text: `Statut → ${h.statut_nouveau_libelle}${h.commentaire ? ` : « ${h.commentaire} »` : ''} (${h.acteur_nom ?? 'compte supprimé'})`,
+        text: `${h.statut_precedent_libelle === h.statut_nouveau_libelle ? 'Observation' : `Statut → ${h.statut_nouveau_libelle}`}${h.commentaire ? ` : « ${h.commentaire} »` : ''} (${h.acteur_nom ?? 'compte supprimé'})`,
       })),
     }))
   }, [])
@@ -807,14 +807,11 @@ export function SignalementsPage() {
 
   /** Décision enregistrée par le backend (rôle, transition et motif de rejet vérifiés). */
   const saveStatus = async (s: Signalement, statut: SigStatut, note: string) => {
-    if (statut === s.statut) {
-      setToast("Choisissez un nouveau statut : l'observation est enregistrée avec la décision.")
-      return
-    }
     try {
-      await changerStatutSignalement(s.num, statut, note)
+      if (statut !== s.statut) await changerStatutSignalement(s.num, statut, note)
+      else if (note) await ajouterObservationSignalement(s.num, note)
       setStatusModal(null)
-      setToast(`${s.id} : « ${SIG_STATUT_META[statut].label} ».`)
+      setToast(statut !== s.statut ? `${s.id} : « ${SIG_STATUT_META[statut].label} ».` : 'Observation ajoutée.')
       await recharger()
       await chargerHistorique(s.num, s.id)
     } catch (err) {
