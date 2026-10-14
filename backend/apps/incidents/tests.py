@@ -330,3 +330,23 @@ class TraitementIncidentTests(TestCase):
             f'/api/v1/incidents/{self.incident.id}/', {'vitesse_radar': 1}, format='json',
         )
         self.assertEqual(reponse.status_code, 405)
+
+
+class IncidentContexteListeTests(TestCase):
+    """La liste des incidents donne la région, le conducteur et le véhicule du boîtier détecteur."""
+
+    def test_contexte_du_boitier_dans_la_liste(self):
+        from apps.conducteurs.models import Conducteur
+
+        boitier = Boitier.objects.create(region='thies', numero_immatriculation='TH-1-AB')
+        Conducteur.objects.create_user(email='c@ctx.sn', password='x', nom='Ba', prenom='Awa', telephone='770000000',
+                                       boitier=boitier)
+        Incident.objects.create(boitier=boitier, latitude=14.79, longitude=-16.93, horodatage=timezone.now(),
+                                type_incident='freinage_brusque')
+        client = APIClient()
+        client.force_authenticate(user=Administrateur.objects.create_user(
+            email='sa@ctx.sn', password='x', nom='S', prenom='A', role=Administrateur.Role.SUPER_ADMIN))
+        ligne = client.get('/api/v1/incidents/').data['results'][0]
+        self.assertEqual((ligne['region'], ligne['immatriculation']), ('thies', 'TH-1-AB'))
+        self.assertEqual(ligne['conducteur']['nom'], 'Awa Ba')
+        self.assertIsNone(ligne['zone_nom'])

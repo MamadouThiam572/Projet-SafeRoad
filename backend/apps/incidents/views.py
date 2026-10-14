@@ -72,7 +72,7 @@ class IncidentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     # Les incidents sont créés exclusivement par les boîtiers (IngestionView/SyncBatchView) :
     # ni création, ni modification des données capteurs ici. Seul leur traitement
     # administratif (statut, observations) est modifiable, par un administrateur.
-    queryset = Incident.objects.all().select_related('boitier', 'zone')
+    queryset = Incident.objects.all().select_related('boitier', 'boitier__conducteur', 'zone')
     serializer_class = IncidentSerializer
     permission_classes = [EstAdminOuAnaser]
     pagination_class = IncidentCursorPagination

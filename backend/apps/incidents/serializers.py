@@ -9,6 +9,13 @@ class IncidentSerializer(serializers.ModelSerializer):
     type_incident_libelle = serializers.CharField(source='get_type_incident_display', read_only=True)
     niveau_gravite_libelle = serializers.CharField(source='get_niveau_gravite_display', read_only=True)
     statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
+    # Contexte pour les listes de gestion : région du boîtier détecteur, conducteur qui le porte
+    # actuellement et véhicule équipé, nom de la zone (lecture seule, sans requête par ligne :
+    # voir select_related dans IncidentViewSet).
+    region = serializers.CharField(source='boitier.region', read_only=True, default=None)
+    immatriculation = serializers.CharField(source='boitier.numero_immatriculation', read_only=True, default='')
+    zone_nom = serializers.SerializerMethodField()
+    conducteur = serializers.SerializerMethodField()
 
     class Meta:
         model = Incident
@@ -16,6 +23,17 @@ class IncidentSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'recu_le', 'niveau_gravite', 'synced', 'historique_sync', 'zone', 'position_fiable', 'statut',
         ]
+
+
+    def get_zone_nom(self, obj):
+        return str(obj.zone) if obj.zone_id else None
+
+    def get_conducteur(self, obj):
+        conducteur = getattr(obj.boitier, 'conducteur', None)
+        if conducteur is None:
+            return None
+        return {'id': str(conducteur.pk), 'nom': f"{conducteur.prenom} {conducteur.nom}".strip(),
+                'telephone': conducteur.telephone}
 
 
 class IncidentIngestionSerializer(serializers.ModelSerializer):
