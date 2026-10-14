@@ -366,8 +366,11 @@ export function getBoitiersDetectes(): Promise<{ adresse_mac: string; message: s
   return authorizedFetch('/boitiers/detectes/')
 }
 
-export function affecterBoitier(id: string, conducteur: string): Promise<BoitierApi> {
-  return authorizedFetch(`/boitiers/${id}/affecter/`, { method: 'POST', body: JSON.stringify({ conducteur }) })
+export function affecterBoitier(id: string, conducteur: string, numero_immatriculation?: string): Promise<BoitierApi> {
+  return authorizedFetch(`/boitiers/${id}/affecter/`, {
+    method: 'POST',
+    body: JSON.stringify(numero_immatriculation === undefined ? { conducteur } : { conducteur, numero_immatriculation }),
+  })
 }
 
 export function desaffecterBoitier(id: string): Promise<BoitierApi> {

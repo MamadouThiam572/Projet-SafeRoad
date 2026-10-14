@@ -23,6 +23,7 @@ import { ProfilPage as AnaserProfilPage } from '@/pages/anaser/ProfilPage'
 import { RetoursPage as AnaserRetoursPage } from '@/pages/anaser/RetoursPage'
 import { DashboardPage as SuperAdminDashboardPage } from '@/pages/superadmin/DashboardPage'
 import { UtilisateursPage as SuperAdminUtilisateursPage } from '@/pages/superadmin/UtilisateursPage'
+import { BoitiersPage as AdminBoitiersPage } from '@/pages/admin/BoitiersPage'
 import { BoitiersPage as SuperAdminBoitiersPage } from '@/pages/superadmin/BoitiersPage'
 import { MonitoringPage as SuperAdminMonitoringPage } from '@/pages/superadmin/MonitoringPage'
 import { AccueilPage as ClientAccueilPage } from '@/pages/client/AccueilPage'
@@ -84,9 +85,7 @@ export function AppRoutes() {
           <Route path={PATHS.admin.demandes} element={<DemandesPage />} />
           <Route path={PATHS.admin.profil} element={<AnaserProfilPage />} />
           <Route path={PATHS.admin.alertes} element={<AdminAlertesPage />} />
-          {/* Même page que le super admin, limitée à la région (backend). L'ancienne maquette
-              pages/admin/BoitiersPage.tsx est mise de côté. */}
-          <Route path={PATHS.admin.boitiers} element={<SuperAdminBoitiersPage />} />
+          <Route path={PATHS.admin.boitiers} element={<AdminBoitiersPage />} />
           {/* La page Statistiques dédiée a été retirée : ses indicateurs vivent
               maintenant dans une section « Statistiques » sur la page Historique. */}
           <Route path={PATHS.admin.historique} element={<AdminHistoriquePage />} />

@@ -1,15 +1,28 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import {
   affectation,
   AFFECTATION_META,
-  BOITIERS,
-  KPI_TRENDS,
+  boitierAdminDepuisApi,
+  historiqueAdminDepuisApi,
   STATUT_META,
   type Affectation,
   type Boitier,
   type StatutAdmin,
 } from '@/data/adminBoitiers'
+import {
+  affecterBoitier,
+  ApiError,
+  creerBoitier,
+  desaffecterBoitier,
+  getBoitiers,
+  getConducteurs,
+  getHistoriqueBoitier,
+  modifierBoitier,
+  regenererCleBoitier,
+  type BoitierApi,
+  type ConducteurApi,
+} from '@/lib/api'
 import { regionLabel, regionPlatePrefix } from '@/lib/regions'
 
 const PAGE_SIZE = 8
@@ -43,22 +56,6 @@ function formatNow(): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function nowParts(): { date: string; heure: string; label: string } {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const date = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
-  const heure = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  return { date, heure, label: `${date} ${heure}` }
-}
-
-/** Génère une clé API factice côté front — à remplacer par un appel backend réel. */
-function generateApiKey(): string {
-  const chars = 'abcdef0123456789'
-  let out = 'sr_live_'
-  for (let i = 0; i < 32; i++) out += chars[Math.floor(Math.random() * chars.length)]
-  return out
-}
-
 function maskApiKey(key: string): string {
   return `${key.slice(0, 11)}${'•'.repeat(20)}${key.slice(-4)}`
 }
@@ -69,8 +66,61 @@ export function BoitiersPage() {
   const platePrefix = useMemo(() => regionPlatePrefix(user?.region), [user?.region])
   const formatPlate = (suffix?: string) => (suffix ? `${platePrefix}-${suffix}` : undefined)
 
-  const [boitiers, setBoitiers] = useState<Boitier[]>(BOITIERS)
+  // Boîtiers réels de la région (le backend filtre) et conducteurs qu'on peut leur affecter.
+  const [donnees, setDonnees] = useState<{ boitiers: BoitierApi[]; conducteurs: ConducteurApi[] }>({ boitiers: [], conducteurs: [] })
+  const [historiques, setHistoriques] = useState<Record<string, Boitier['historique']>>({})
+  // Clés API obtenues pendant la visite (création, réinitialisation) : jamais relues ensuite.
+  const [cles, setCles] = useState<Record<string, string>>({})
+  const [erreur, setErreur] = useState('')
   const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  const boitiers = useMemo(
+    () =>
+      donnees.boitiers.map((b) => {
+        const ligne = boitierAdminDepuisApi(b, platePrefix, cles[b.id] ?? '')
+        return { ...ligne, historique: historiques[ligne.id] ?? ligne.historique }
+      }),
+    [donnees.boitiers, platePrefix, cles, historiques],
+  )
+  /** Conducteurs proposés : ceux de la région et ceux qui n'ont pas encore de boîtier. */
+  const conducteursDispo = donnees.conducteurs
+
+  const recharger = useCallback(async () => {
+    try {
+      const [bs, cs] = await Promise.all([getBoitiers(), getConducteurs()])
+      setDonnees({ boitiers: bs, conducteurs: cs })
+      setLastRefresh(formatNow())
+      setErreur('')
+    } catch (err) {
+      setErreur(err instanceof ApiError ? err.message : 'Serveur injoignable : vérifiez que le backend est lancé.')
+    }
+  }, [])
+
+  useEffect(() => {
+    void recharger()
+  }, [recharger])
+
+  const chargerHistorique = useCallback(async (b: Boitier) => {
+    const lignes = await getHistoriqueBoitier(b.uuid).catch(() => [])
+    setHistoriques((prev) => ({ ...prev, [b.id]: lignes.map(historiqueAdminDepuisApi).reverse() }))
+  }, [])
+
+  /** Appel au backend puis rechargement ; l'erreur éventuelle s'affiche sous l'en-tête. */
+  const executer = async (appel: () => Promise<unknown>, b?: Boitier) => {
+    try {
+      await appel()
+      setErreur('')
+      await recharger()
+      if (b) await chargerHistorique(b)
+      return true
+    } catch (err) {
+      setErreur(err instanceof ApiError ? err.message : 'Action non enregistrée : serveur injoignable.')
+      return false
+    }
+  }
+
+  /** Nom saisi -> conducteur réel (correspondance exacte, insensible à la casse). */
+  const conducteurParNom = (nom: string) =>
+    conducteursDispo.find((c) => `${c.prenom} ${c.nom}`.trim().toLowerCase() === nom.trim().toLowerCase())
 
   const [search, setSearch] = useState('')
   const [statutFiltre, setStatutFiltre] = useState<'tous' | StatutAdmin>('tous')
@@ -135,10 +185,10 @@ export function BoitiersPage() {
     const nonAffectes = total - affectes
     const actifs = boitiers.filter((b) => b.statut === 'actif').length
     return [
-      { key: 'total', icon: 'memory', tint: '#2b6cb0', soft: '#e8f0f9', value: total, label: 'Total boîtiers', sub: 'Boîtiers enregistrés dans votre région', trend: KPI_TRENDS.total },
-      { key: 'affectes', icon: 'person_pin_circle', tint: '#1f9d55', soft: '#e9f6ee', value: affectes, label: 'Affectés', sub: 'Boîtiers associés à un conducteur', trend: KPI_TRENDS.affectes },
-      { key: 'nonAffectes', icon: 'link_off', tint: '#e8940c', soft: '#fdf4e6', value: nonAffectes, label: 'Non affectés', sub: 'Boîtiers disponibles pour affectation', trend: KPI_TRENDS.nonAffectes },
-      { key: 'actifs', icon: 'check_circle', tint: '#2b6cb0', soft: '#e8f0f9', value: actifs, label: 'Actifs', sub: 'Boîtiers au statut administratif actif', trend: KPI_TRENDS.actifs },
+      { key: 'total', icon: 'memory', tint: '#2b6cb0', soft: '#e8f0f9', value: total, label: 'Total boîtiers', sub: 'Boîtiers enregistrés dans votre région', trend: Array(7).fill(total) },
+      { key: 'affectes', icon: 'person_pin_circle', tint: '#1f9d55', soft: '#e9f6ee', value: affectes, label: 'Affectés', sub: 'Boîtiers associés à un conducteur', trend: Array(7).fill(affectes) },
+      { key: 'nonAffectes', icon: 'link_off', tint: '#e8940c', soft: '#fdf4e6', value: nonAffectes, label: 'Non affectés', sub: 'Boîtiers disponibles pour affectation', trend: Array(7).fill(nonAffectes) },
+      { key: 'actifs', icon: 'check_circle', tint: '#2b6cb0', soft: '#e8f0f9', value: actifs, label: 'Actifs', sub: 'Boîtiers au statut administratif actif', trend: Array(7).fill(actifs) },
     ]
   }, [boitiers])
 
@@ -178,65 +228,52 @@ export function BoitiersPage() {
     setStatutDraft(b?.statut ?? 'actif')
     setConducteurDraft(b?.conducteur ?? '')
     setVehiculeDraft(b?.vehicule ?? '')
+    if (b) void chargerHistorique(b)
   }
 
-  // TODO backend : chaque mutation ci-dessous doit devenir un appel API
-  // (PATCH/POST /api/v1/boitiers/{id}/…) réservé aux rôles admin/super_admin ;
-  // pour l'instant tout reste en état local, non persisté côté serveur.
-  const updateBoitier = (id: string, fn: (b: Boitier) => Boitier) => {
-    setBoitiers((prev) => prev.map((b) => (b.id === id ? fn(b) : b)))
+  const handleEnregistrerStatut = async (id: string) => {
+    const b = boitiers.find((x) => x.id === id)
+    if (!b || b.statut === statutDraft) {
+      setEditingStatut(false)
+      return
+    }
+    if (await executer(() => modifierBoitier(b.uuid, { statut: statutDraft }), b)) setEditingStatut(false)
   }
 
-  const handleEnregistrerStatut = (id: string) => {
-    updateBoitier(id, (b) => {
-      if (b.statut === statutDraft) return b
-      const { date, heure } = nowParts()
-      return {
-        ...b,
-        statut: statutDraft,
-        historique: [
-          ...b.historique,
-          { date, heure, texte: `Statut administratif passé à ${STATUT_META[statutDraft].label}`, administrateur: 'Vous' },
-        ],
+  const handleEnregistrerAffectation = async (id: string) => {
+    const b = boitiers.find((x) => x.id === id)
+    if (!b) return
+    const nom = conducteurDraft.trim()
+    const plaque = vehiculeDraft.trim() ? `${platePrefix}-${vehiculeDraft.trim().toUpperCase()}` : ''
+    let appel: () => Promise<unknown>
+    if (!nom) {
+      appel = async () => {
+        if (b.conducteurId) await desaffecterBoitier(b.uuid)
+        await modifierBoitier(b.uuid, { numero_immatriculation: plaque })
       }
-    })
-    setEditingStatut(false)
-  }
-
-  const handleEnregistrerAffectation = (id: string) => {
-    const conducteur = conducteurDraft.trim()
-    const vehicule = vehiculeDraft.trim()
-    const { date, heure, label } = nowParts()
-    updateBoitier(id, (b) => {
-      const ancienConducteur = b.conducteur
-      let texte: string
-      if (!ancienConducteur && conducteur) texte = `Affecté à ${conducteur}`
-      else if (ancienConducteur && !conducteur) texte = `Désaffecté de ${ancienConducteur}`
-      else if (ancienConducteur && conducteur && ancienConducteur !== conducteur) texte = `Désaffecté de ${ancienConducteur}, affecté à ${conducteur}`
-      else if (ancienConducteur && conducteur) texte = `Informations d'affectation mises à jour (${conducteur})`
-      else return b // rien n'a changé
-
-      return {
-        ...b,
-        conducteur: conducteur || undefined,
-        vehicule: vehicule || undefined,
-        derniereAffectation: label,
-        derniereAffectationTs: new Date().toISOString(),
-        historique: [...b.historique, { date, heure, texte, administrateur: 'Vous' }],
+    } else {
+      const c = conducteurParNom(nom)
+      if (!c) {
+        setErreur(`Conducteur « ${nom} » introuvable : choisissez un nom dans la liste proposée.`)
+        return
       }
-    })
-    setEditingAffectation(false)
+      appel = () => affecterBoitier(b.uuid, c.id, plaque)
+    }
+    if (await executer(appel, b)) setEditingAffectation(false)
   }
 
-  const handleReinitialiserCle = (id: string) => {
-    const { date, heure } = nowParts()
-    const newKey = generateApiKey()
-    updateBoitier(id, (b) => ({
-      ...b,
-      apiKey: newKey,
-      historique: [...b.historique, { date, heure, texte: 'Clé API réinitialisée', administrateur: 'Vous' }],
-    }))
-    setApiKeyRevealed(false)
+  const handleReinitialiserCle = async (id: string) => {
+    const b = boitiers.find((x) => x.id === id)
+    if (!b) return
+    try {
+      const res = await regenererCleBoitier(b.uuid)
+      setCles((prev) => ({ ...prev, [b.uuid]: res.api_key }))
+      setApiKeyRevealed(true)
+      setErreur('')
+      await chargerHistorique(b)
+    } catch (err) {
+      setErreur(err instanceof ApiError ? err.message : 'Réinitialisation impossible : serveur injoignable.')
+    }
   }
 
   const resetAddForm = () => {
@@ -245,33 +282,24 @@ export function BoitiersPage() {
     setNewVehicule('')
   }
 
-  const handleAjouterBoitier = () => {
-    const id = newId.trim()
-    if (!id) return
-    if (boitiers.some((b) => b.id.toLowerCase() === id.toLowerCase())) return
-    const { date, heure } = nowParts()
-    const conducteur = newConducteur.trim() || undefined
-    const vehicule = newVehicule.trim() || undefined
-    const nouveau: Boitier = {
-      id,
-      uuid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      apiKey: generateApiKey(),
-      statut: 'actif',
-      dateEnregistrement: date,
-      conducteur,
-      vehicule,
-      derniereAffectation: conducteur ? `${date} ${heure}` : undefined,
-      derniereAffectationTs: conducteur ? new Date().toISOString() : undefined,
-      historique: conducteur
-        ? [
-            { date, heure, texte: 'Boîtier enregistré', administrateur: 'Vous' },
-            { date, heure, texte: `Affecté à ${conducteur}`, administrateur: 'Vous' },
-          ]
-        : [{ date, heure, texte: 'Boîtier enregistré', administrateur: 'Vous' }],
+  /** Enregistre un boîtier dans la région de l'admin (le backend impose la région). */
+  const handleAjouterBoitier = async () => {
+    const nom = newConducteur.trim()
+    const c = nom ? conducteurParNom(nom) : undefined
+    if (nom && !c) {
+      setErreur(`Conducteur « ${nom} » introuvable : choisissez un nom dans la liste proposée.`)
+      return
     }
-    setBoitiers((prev) => [nouveau, ...prev])
-    resetAddForm()
-    setShowAddModal(false)
+    const plaque = newVehicule.trim() ? `${platePrefix}-${newVehicule.trim().toUpperCase()}` : ''
+    const ok = await executer(async () => {
+      const cree = await creerBoitier({ region: user?.region ?? '', numero_immatriculation: plaque, adresse_mac: newId.trim() || null })
+      setCles((prev) => ({ ...prev, [cree.id]: cree.api_key }))
+      if (c) await affecterBoitier(cree.id, c.id)
+    })
+    if (ok) {
+      resetAddForm()
+      setShowAddModal(false)
+    }
   }
 
   const selectedBoitier = selectedId ? boitiers.find((b) => b.id === selectedId) ?? null : null
@@ -283,6 +311,12 @@ export function BoitiersPage() {
 
     return (
       <div className="pb-8">
+        <datalist id="conducteurs-region">
+          {conducteursDispo.map((c) => (
+            <option key={c.id} value={`${c.prenom} ${c.nom}`.trim()} />
+          ))}
+        </datalist>
+        {erreur && <p className="mx-6 mt-3 text-xs font-semibold text-danger-600">{erreur}</p>}
         <section className="mx-6 mt-5">
           <button
             type="button"
@@ -343,7 +377,7 @@ export function BoitiersPage() {
               <div className="col-span-2">
                 <dt className="font-semibold text-faint">Clé API</dt>
                 <dd className="m-0 mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11.5px] font-semibold text-ink">
-                  {apiKeyRevealed ? b.apiKey : maskApiKey(b.apiKey)}
+                  {!b.apiKey ? 'Masquée (jamais renvoyée par le serveur : réinitialisez-la pour en obtenir une nouvelle)' : apiKeyRevealed ? b.apiKey : maskApiKey(b.apiKey)}
                   <button
                     type="button"
                     onClick={() => setApiKeyRevealed((v) => !v)}
@@ -355,7 +389,7 @@ export function BoitiersPage() {
                 </dd>
                 <button
                   type="button"
-                  onClick={() => handleReinitialiserCle(b.id)}
+                  onClick={() => void handleReinitialiserCle(b.id)}
                   className="mt-2 flex items-center gap-1 text-[11.5px] font-bold text-danger-600"
                 >
                   <span className="ic text-base">autorenew</span>
@@ -376,7 +410,7 @@ export function BoitiersPage() {
                     </select>
                     <button
                       type="button"
-                      onClick={() => handleEnregistrerStatut(b.id)}
+                      onClick={() => void handleEnregistrerStatut(b.id)}
                       className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11.5px] font-bold text-white hover:bg-brand-700"
                     >
                       Enregistrer
@@ -437,6 +471,7 @@ export function BoitiersPage() {
                   <input
                     type="text"
                     value={conducteurDraft}
+                    list="conducteurs-region"
                     onChange={(e) => setConducteurDraft(e.target.value)}
                     placeholder="Nom du conducteur (vide = désaffecter)"
                     className="w-full rounded-[9px] border-[1.5px] border-line-field bg-field px-3 py-2 text-[12.5px] font-medium text-ink outline-none placeholder:text-faint"
@@ -460,7 +495,7 @@ export function BoitiersPage() {
                 <div className="flex gap-2.5">
                   <button
                     type="button"
-                    onClick={() => handleEnregistrerAffectation(b.id)}
+                    onClick={() => void handleEnregistrerAffectation(b.id)}
                     className="rounded-lg bg-brand-600 px-3 py-1.5 text-[11.5px] font-bold text-white hover:bg-brand-700"
                   >
                     Enregistrer
@@ -500,6 +535,12 @@ export function BoitiersPage() {
 
   return (
     <div className="pb-8">
+      <datalist id="conducteurs-region">
+        {conducteursDispo.map((c) => (
+          <option key={c.id} value={`${c.prenom} ${c.nom}`.trim()} />
+        ))}
+      </datalist>
+      {erreur && <p className="mx-6 mt-3 text-xs font-semibold text-danger-600">{erreur}</p>}
       <section className="mx-6 mt-5 flex flex-wrap items-start justify-between gap-3.5">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-navy-900 text-white">
@@ -521,7 +562,7 @@ export function BoitiersPage() {
           </span>
           <button
             type="button"
-            onClick={() => setLastRefresh(formatNow())}
+            onClick={() => void recharger()}
             className="flex items-center gap-2 whitespace-nowrap rounded-full border border-line bg-white px-3.5 py-2.5 text-left text-xs font-bold text-ink transition-colors hover:bg-page"
           >
             <span>
@@ -806,12 +847,12 @@ export function BoitiersPage() {
             </div>
             <div className="flex flex-col gap-3">
               <label className="block">
-                <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-faint">Identifiant *</span>
+                <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-faint">Adresse MAC du boîtier (optionnel)</span>
                 <input
                   type="text"
                   value={newId}
                   onChange={(e) => setNewId(e.target.value)}
-                  placeholder="Ex : SR-BOX-015"
+                  placeholder="Ex : 24:6F:28:AA:BB:CC"
                   className="w-full rounded-[9px] border-[1.5px] border-line-field bg-field px-3 py-2 text-[12.5px] font-medium text-ink outline-none placeholder:text-faint"
                 />
               </label>
@@ -820,6 +861,7 @@ export function BoitiersPage() {
                 <input
                   type="text"
                   value={newConducteur}
+                  list="conducteurs-region"
                   onChange={(e) => setNewConducteur(e.target.value)}
                   placeholder="Nom du conducteur"
                   className="w-full rounded-[9px] border-[1.5px] border-line-field bg-field px-3 py-2 text-[12.5px] font-medium text-ink outline-none placeholder:text-faint"
@@ -841,7 +883,7 @@ export function BoitiersPage() {
                 </div>
               </label>
               <p className="m-0 text-[11px] text-faint">
-                L'UUID et la clé API sont générés automatiquement. Le statut administratif est défini à « Actif ».
+                L'UUID et la clé API sont générés automatiquement (la clé n'est affichée qu'une fois). Le statut administratif est défini à « Actif ».
               </p>
               <div className="mt-1 flex justify-end gap-2.5">
                 <button
@@ -856,8 +898,7 @@ export function BoitiersPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleAjouterBoitier}
-                  disabled={!newId.trim()}
+                  onClick={() => void handleAjouterBoitier()}
                   className="rounded-lg bg-brand-600 px-3.5 py-2 text-[12.5px] font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Ajouter

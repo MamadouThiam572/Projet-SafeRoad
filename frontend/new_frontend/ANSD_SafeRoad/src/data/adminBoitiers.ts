@@ -1,3 +1,5 @@
+import type { BoitierApi, HistoriqueBoitierApi } from '@/lib/api'
+
 export type StatutAdmin = 'actif' | 'inactif'
 export type Affectation = 'affecte' | 'non_affecte'
 
@@ -36,6 +38,10 @@ export interface Boitier {
   derniereAffectation?: string // JJ/MM/AAAA HH:mm
   derniereAffectationTs?: string // ISO, utilisé pour le tri
   historique: AffectationHistoryEntry[]
+  /** Identifiant du conducteur côté backend (données réelles). */
+  conducteurId?: string
+  /** Adresse MAC de l'ESP32 (identifie le boîtier dans ses messages MQTT). */
+  mac?: string
 }
 
 export function affectation(b: Boitier): Affectation {
@@ -229,4 +235,48 @@ export const KPI_TRENDS = {
   affectes: [5, 6, 6, 7, 7, 8, 9],
   nonAffectes: [5, 4, 5, 4, 5, 5, 5],
   actifs: [8, 8, 9, 9, 10, 11, 11],
+}
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /boitiers/, déjà limité à la région) */
+/* ------------------------------------------------------------------ */
+
+const p2 = (n: number) => String(n).padStart(2, '0')
+const jour = (iso: string) => {
+  const t = new Date(iso)
+  return { date: `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()}`, heure: `${p2(t.getHours())}:${p2(t.getMinutes())}` }
+}
+
+/**
+ * Boîtier du backend -> ligne de la page. La plaque est gardée SANS le préfixe régional (la page
+ * l'ajoute à l'affichage). La clé API n'est jamais renvoyée par le backend : `apiKey` n'est
+ * rempli que si elle vient d'être obtenue (création ou réinitialisation) pendant la visite.
+ */
+export function boitierAdminDepuisApi(b: BoitierApi, prefixe: string, cle = ''): Boitier {
+  const plaque = b.numero_immatriculation || ''
+  const sansPrefixe = plaque.toUpperCase().startsWith(`${prefixe}-`) ? plaque.slice(prefixe.length + 1) : plaque
+  const affecte = b.date_affectation ? jour(b.date_affectation) : null
+  return {
+    id: `SR-${b.id.slice(0, 8).toUpperCase()}`,
+    uuid: b.id,
+    apiKey: cle,
+    statut: b.statut === 'actif' ? 'actif' : 'inactif',
+    dateEnregistrement: jour(b.date_creation).date,
+    conducteur: b.conducteur?.nom,
+    conducteurId: b.conducteur?.id,
+    vehicule: sansPrefixe || undefined,
+    derniereAffectation: affecte ? `${affecte.date} ${affecte.heure}` : undefined,
+    derniereAffectationTs: b.date_affectation ?? undefined,
+    historique: [],
+    mac: b.adresse_mac ?? undefined,
+  }
+}
+
+/** Historique du backend -> lignes « Historique d'affectation ». */
+export function historiqueAdminDepuisApi(h: HistoriqueBoitierApi): AffectationHistoryEntry {
+  const { date, heure } = jour(h.date)
+  const qui = h.conducteur_nom ? ` ${h.conducteur_nom}` : ''
+  const texte =
+    h.evenement === 'affecte' ? `Affecté à${qui}` : h.evenement === 'desaffecte' ? `Désaffecté de${qui}` : 'Boîtier enregistré'
+  return { date, heure, texte: h.commentaire ? `${texte} — ${h.commentaire}` : texte, administrateur: h.acteur_nom ?? '—' }
 }
