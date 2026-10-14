@@ -46,6 +46,10 @@ class AlerteAnaserPermissionsTests(TestCase):
     def url(self):
         return f'/api/v1/alertes-anaser/{self.retour.id}/'
 
+    def test_la_liste_donne_la_cible_et_l_auteur(self):
+        ligne = self.client_pour(self.admin_dakar).get('/api/v1/alertes-anaser/').data[0]
+        self.assertEqual((ligne['cible_libelle'], ligne['auteur_nom']), (f'Zone #{self.zone.pk} (Dakar)', 'A A'))
+
     def test_l_auteur_peut_faire_avancer_le_statut(self):
         reponse = self.client_pour(self.anaser).patch(self.url(), {'statut': 'realisee'}, format='json')
         self.assertEqual(reponse.status_code, 200)

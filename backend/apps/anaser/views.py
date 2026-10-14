@@ -20,7 +20,7 @@ class EstAuteurOuSuperAdminPourSuppression(BasePermission):
 
 
 class AlerteAnaserViewSet(viewsets.ModelViewSet):
-    queryset = AlerteAnaser.objects.all().select_related('zone', 'incident', 'auteur')
+    queryset = AlerteAnaser.objects.all().select_related('zone', 'incident__boitier', 'auteur')
     serializer_class = AlerteAnaserSerializer
     pagination_class = PaginationListeGestion
 
