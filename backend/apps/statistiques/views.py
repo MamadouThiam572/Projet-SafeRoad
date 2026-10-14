@@ -103,6 +103,133 @@ def _compter_par_region(queryset, champ_region, filtre=None):
     return {ligne[champ_region]: ligne['n'] for ligne in queryset.values(champ_region).annotate(n=Count('id'))}
 
 
+# Regroupement des statuts de zones pour la répartition « Analyse des zones ».
+_GROUPES_ZONES = [
+    ('a_valider', 'À valider', [Zone.StatutValidation.PROPOSEE, Zone.StatutValidation.EN_VERIFICATION,
+                                Zone.StatutValidation.VALIDEE_TECHNIQUEMENT]),
+    ('soumises', "Soumises à l'ANASER", [Zone.StatutValidation.SOUMISE_ANASER]),
+    ('reconnues', "Reconnues par l'ANASER", [Zone.StatutValidation.RECONNUE]),
+    ('rejetees', 'Rejetées', [Zone.StatutValidation.REJETEE]),
+]
+# Points dessinés sur la carte des statistiques (les plus récents).
+MAX_POINTS_CARTE = 400
+
+
+def _repartition(lignes, libelles, champ):
+    """[{cle, libelle, nombre, pourcentage}] trié du plus fréquent au moins fréquent."""
+    total = sum(l['n'] for l in lignes) or 1
+    return [
+        {'cle': l[champ], 'libelle': libelles.get(l[champ], l[champ]), 'nombre': l['n'],
+         'pourcentage': round(100 * l['n'] / total, 1)}
+        for l in sorted(lignes, key=lambda l: -l['n'])
+    ]
+
+
+class StatistiquesDetailleesView(APIView):
+    """Statistiques de la page Statistiques sur ?jours= (défaut 30), pour le périmètre du compte :
+    national pour le super admin et l'ANASER (filtre ?region= facultatif), sa région pour
+    l'administrateur régional ; ?zone= restreint aux incidents et signalements d'une zone
+    (filtre « Localité »). Événements = incidents + signalements + alertes."""
+
+    permission_classes = [EstAdminOuAnaser]
+
+    def get(self, request):
+        utilisateur = request.user
+        try:
+            jours = min(max(int(request.query_params.get('jours', 30)), 1), JOURS_MAX)
+        except ValueError:
+            raise ValidationError({'jours': "Nombre de jours invalide."})
+        national = utilisateur.role in ('super_admin', 'anaser')
+        region = request.query_params.get('region') if national else utilisateur.region
+        if region and region not in Region.values:
+            raise ValidationError({'region': "Région inconnue."})
+        depuis = timezone.now() - timedelta(days=jours)
+
+        incidents = Incident.objects.filter(horodatage__gte=depuis)
+        signalements = Signalement.objects.filter(date_creation__gte=depuis)
+        alertes = Alerte.objects.filter(date_creation__gte=depuis)
+        zones = Zone.objects.filter(actif=True)
+        if region or not national:
+            incidents = incidents.filter(boitier__region=region)
+            signalements = signalements.filter(region=region)
+            alertes = alertes.filter(boitier__region=region)
+            zones = zones.filter(region=region)
+        localites = [{'id': z.id, 'nom': str(z), 'region': z.region} for z in zones.order_by('nom', 'id')]
+        zone_id = request.query_params.get('zone')
+        if zone_id:
+            zone = zones.filter(pk=zone_id).first()
+            if zone is None:
+                raise ValidationError({'zone': "Localité inconnue."})
+            incidents = incidents.filter(zone=zone)
+            rayon = zone.rayon_metres / 111_000
+            signalements = signalements.filter(
+                latitude__range=(zone.latitude_centre - rayon, zone.latitude_centre + rayon),
+                longitude__range=(zone.longitude_centre - rayon, zone.longitude_centre + rayon),
+            )
+            alertes = alertes.filter(zone=zone)
+            zones = zones.filter(pk=zone.pk)
+
+        dates = [(timezone.localdate() - timedelta(days=k)) for k in range(jours - 1, -1, -1)]
+        par_jour_inc = _par_jour(incidents, 'horodatage', depuis)
+        par_jour_sig = _par_jour(signalements, 'date_creation', depuis)
+        series = [{'date': d.isoformat(), 'incidents': par_jour_inc.get(d, 0), 'signalements': par_jour_sig.get(d, 0)}
+                  for d in dates]
+
+        n_inc, n_sig, n_ale = incidents.count(), signalements.count(), alertes.count()
+        groupes = [
+            {'cle': cle, 'libelle': libelle, 'nombre': zones.filter(statut_validation__in=statuts).count()}
+            for cle, libelle, statuts in _GROUPES_ZONES
+        ]
+        total_groupes = sum(g['nombre'] for g in groupes) or 1
+        for g in groupes:
+            g['pourcentage'] = round(100 * g['nombre'] / total_groupes, 1)
+
+        inc_par_zone = dict(incidents.exclude(zone=None).values_list('zone').annotate(n=Count('id')))
+        zones_actives = sorted(
+            ({'id': z.id, 'nom': str(z), 'region': z.region, 'region_libelle': z.get_region_display() if z.region else None,
+              'incidents': inc_par_zone.get(z.id, 0), 'signalements': z.nombre_signalements, 'niveau_danger': z.niveau_danger}
+             for z in zones),
+            key=lambda z: (-z['incidents'], -z['signalements']),
+        )[:8]
+
+        regions = [region] if region else ([slug for slug, _ in Region.choices] if national else [region])
+        inc_r = _compter_par_region(incidents, 'boitier__region')
+        sig_r = _compter_par_region(signalements, 'region')
+        ale_r = _compter_par_region(alertes, 'boitier__region')
+        zon_r = _compter_par_region(zones, 'region')
+        par_region = sorted(
+            ({'region': slug, 'libelle': Region(slug).label, 'incidents': inc_r.get(slug, 0),
+              'signalements': sig_r.get(slug, 0), 'alertes': ale_r.get(slug, 0), 'zones': zon_r.get(slug, 0),
+              'evenements': inc_r.get(slug, 0) + sig_r.get(slug, 0) + ale_r.get(slug, 0)}
+             for slug in regions if slug),
+            key=lambda r: -r['incidents'],
+        )
+
+        return Response({
+            'perimetre': {'national': national and not region, 'region': region, 'jours': jours, 'zone': zone_id},
+            'indicateurs': {
+                'incidents': n_inc, 'signalements': n_sig, 'alertes': n_ale,
+                'evenements': n_inc + n_sig + n_ale, 'zones': zones.count(),
+            },
+            'series': series,
+            'incidents_par_type': _repartition(
+                list(incidents.values('type_incident').annotate(n=Count('id'))),
+                dict(Incident.TypeIncident.choices), 'type_incident'),
+            'signalements_par_type': _repartition(
+                list(signalements.values('type_danger').annotate(n=Count('id'))),
+                dict(Signalement.TypeDanger.choices), 'type_danger'),
+            'zones_par_statut': groupes,
+            'zones_actives': zones_actives,
+            'par_region': par_region,
+            'localites': localites,
+            'carte': {
+                'incidents': list(incidents.order_by('-horodatage').values('latitude', 'longitude', 'niveau_gravite')[:MAX_POINTS_CARTE]),
+                'signalements': list(signalements.order_by('-date_creation').values('latitude', 'longitude')[:MAX_POINTS_CARTE]),
+                'zones': list(zones.values('latitude_centre', 'longitude_centre', 'niveau_danger', 'nom', 'id')),
+            },
+        })
+
+
 class TableauDeBordView(APIView):
     """Chiffres du tableau de bord, calculés en direct. Administrateur régional : sa région
     (un ?region= est ignoré). Super admin et ANASER : national, avec le détail par région et

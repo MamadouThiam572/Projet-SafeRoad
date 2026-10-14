@@ -295,3 +295,54 @@ class ResumePublicTests(TestCase):
         Boitier.objects.create(region='dakar')
         d = APIClient().get('/api/v1/statistiques/publiques/resume/').data['par_region']['dakar']
         self.assertEqual(d, {'zones_reconnues': 1, 'zones_a_examiner': 1, 'zones_en_observation': 0, 'boitiers_actifs': 1})
+
+
+class StatistiquesDetailleesTests(TestCase):
+    """Page Statistiques : chiffres de la période, répartitions, régions, localités, carte."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = Administrateur.objects.create_user(
+            email='sa@stats.sn', password='x', nom='S', prenom='A', role=Administrateur.Role.SUPER_ADMIN)
+        cls.admin = Administrateur.objects.create_user(
+            email='ad@stats.sn', password='x', nom='D', prenom='M', role=Administrateur.Role.ADMIN, region='thies')
+        dakar, thies = Boitier.objects.create(region='dakar'), Boitier.objects.create(region='thies')
+        cls.zone = Zone.objects.create(region='dakar', latitude_centre=14.69, longitude_centre=-17.44, rayon_metres=300,
+                                       statut_validation=Zone.StatutValidation.RECONNUE)
+        maintenant = timezone.now()
+        for boitier, type_incident, zone in ((dakar, 'freinage_brusque', cls.zone), (dakar, 'exces_vitesse', None),
+                                             (thies, 'freinage_brusque', None)):
+            Incident.objects.create(boitier=boitier, latitude=14.69, longitude=-17.44, horodatage=maintenant,
+                                    type_incident=type_incident, zone=zone)
+        conducteur = Conducteur.objects.create_user(email='c@stats.sn', password='x', nom='B', prenom='A')
+        Signalement.objects.create(conducteur=conducteur, type_danger='obstacle', latitude=14.69, longitude=-17.44,
+                                   region='dakar')
+
+    def donnees(self, compte, parametres=''):
+        client = APIClient()
+        client.force_authenticate(user=compte)
+        reponse = client.get(f'/api/v1/statistiques/detaillees/?jours=30{parametres}')
+        self.assertEqual(reponse.status_code, 200, reponse.data)
+        return reponse.data
+
+    def test_vue_nationale(self):
+        d = self.donnees(self.super_admin)
+        self.assertEqual(d['indicateurs'], {'incidents': 3, 'signalements': 1, 'alertes': d['indicateurs']['alertes'],
+                                            'evenements': 4 + d['indicateurs']['alertes'], 'zones': 1})
+        self.assertEqual(d['incidents_par_type'][0], {'cle': 'freinage_brusque', 'libelle': 'Freinage brusque',
+                                                      'nombre': 2, 'pourcentage': 66.7})
+        self.assertEqual(len(d['series']), 30)
+        self.assertEqual(d['series'][-1]['incidents'], 3)
+        self.assertEqual(len(d['par_region']), 14)
+        self.assertEqual(d['zones_actives'][0]['incidents'], 1)
+        self.assertEqual(len(d['carte']['incidents']), 3)
+
+    def test_filtre_region_et_localite(self):
+        self.assertEqual(self.donnees(self.super_admin, '&region=thies')['indicateurs']['incidents'], 1)
+        d = self.donnees(self.super_admin, f'&zone={self.zone.pk}')
+        self.assertEqual((d['indicateurs']['incidents'], d['indicateurs']['signalements']), (1, 1))
+
+    def test_admin_regional_limite_a_sa_region(self):
+        d = self.donnees(self.admin, '&region=dakar')  # ?region= ignoré
+        self.assertEqual(d['indicateurs']['incidents'], 1)
+        self.assertEqual([r['region'] for r in d['par_region']], ['thies'])
