@@ -346,3 +346,26 @@ class StatistiquesDetailleesTests(TestCase):
         d = self.donnees(self.admin, '&region=dakar')  # ?region= ignoré
         self.assertEqual(d['indicateurs']['incidents'], 1)
         self.assertEqual([r['region'] for r in d['par_region']], ['thies'])
+
+
+class JournalActiviteTests(TestCase):
+    def test_journal_regroupe_les_decisions_et_reserve_au_super_admin(self):
+        from apps.zones.models import HistoriqueStatutZone
+
+        super_admin = Administrateur.objects.create_user(
+            email='sa@journal.sn', password='x', nom='Sarr', prenom='Awa', role=Administrateur.Role.SUPER_ADMIN)
+        admin = Administrateur.objects.create_user(
+            email='ad@journal.sn', password='x', nom='D', prenom='M', role=Administrateur.Role.ADMIN, region='dakar')
+        zone = Zone.objects.create(region='dakar', latitude_centre=14.69, longitude_centre=-17.44, rayon_metres=300)
+        HistoriqueStatutZone.objects.create(zone=zone, statut_precedent='proposee', statut_nouveau='validee_technique',
+                                            acteur=admin, role_acteur='admin', commentaire='Vu sur le terrain')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        self.assertEqual(client.get('/api/v1/journal-activite/').status_code, 403)
+        client.force_authenticate(user=super_admin)
+        d = client.get('/api/v1/journal-activite/?jours=7').data
+        self.assertEqual(d['total'], 1)
+        self.assertEqual((d['lignes'][0]['categorie'], d['lignes'][0]['role'], d['lignes'][0]['region_libelle']),
+                         ('zone', 'Admin régional', 'Dakar'))
+        self.assertEqual(client.get('/api/v1/journal-activite/?q=terrain').data['total'], 1)
+        self.assertEqual(client.get('/api/v1/journal-activite/?categorie=boitier').data['total'], 0)

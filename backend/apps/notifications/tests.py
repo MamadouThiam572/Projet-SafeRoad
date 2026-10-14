@@ -168,3 +168,15 @@ class NotificationsWorkflowZoneTests(TestCase):
             type_notification=NotificationAdmin.TypeNotification.SYNC_ECHOUEE, message="Diffusion personnel",
         )
         self.assertEqual(self.types_recus(self.anaser), [])
+
+
+class ToutLireTests(TestCase):
+    def test_tout_marquer_comme_lu(self):
+        sa = Administrateur.objects.create_user(email='sa@lu.sn', password='x', nom='S', prenom='A',
+                                                role=Administrateur.Role.SUPER_ADMIN)
+        NotificationAdmin.objects.create(type_notification='nouvelle_demande', message='Diffusion')
+        NotificationAdmin.objects.create(destinataire=sa, type_notification='boitier_inconnu', message='Ciblée')
+        client = APIClient()
+        client.force_authenticate(user=sa)
+        self.assertEqual(client.post('/api/v1/notifications/tout-lire/').status_code, 200)
+        self.assertTrue(all(n['lue'] for n in client.get('/api/v1/notifications/').data))

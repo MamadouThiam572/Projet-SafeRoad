@@ -14,7 +14,7 @@ from apps.boitiers.serializers import BoitierSerializer
 from apps.comptes.models import Administrateur
 from apps.conducteurs.models import Conducteur
 from apps.configuration.models import ConfigurationSysteme
-from apps.core.permissions import EstAdminOuAnaser, EstConducteur
+from apps.core.permissions import EstAdminOuAnaser, EstConducteur, EstSuperAdministrateur
 from apps.core.regionalisation import appliquer_filtre_regional
 from apps.core.regions import Region
 from apps.incidents.models import Incident
@@ -123,6 +123,92 @@ def _repartition(lignes, libelles, champ):
          'pourcentage': round(100 * l['n'] / total, 1)}
         for l in sorted(lignes, key=lambda l: -l['n'])
     ]
+
+
+ROLE_LIBELLE = {'admin': 'Admin régional', 'super_admin': 'Super admin', 'anaser': 'ANASER'}
+
+
+class JournalActiviteView(APIView):
+    """Journal de toutes les décisions et actions de la plateforme, du plus récent au plus ancien :
+    zones, signalements, incidents, boîtiers et demandes d'installation. Filtres : ?jours=
+    (défaut 30), ?categorie=, ?region=, ?q= (texte, acteur ou objet). 500 lignes au plus."""
+
+    permission_classes = [EstSuperAdministrateur]
+    LIMITE = 500
+
+    def get(self, request):
+        from apps.boitiers.models import HistoriqueBoitier
+        from apps.demandes.models import HistoriqueDemande
+        from apps.incidents.models import ObservationIncident
+        from apps.signalements.models import HistoriqueStatutSignalement
+
+        try:
+            jours = min(max(int(request.query_params.get('jours', 30)), 1), JOURS_MAX)
+        except ValueError:
+            raise ValidationError({'jours': "Nombre de jours invalide."})
+        depuis = timezone.now() - timedelta(days=jours)
+        categorie = request.query_params.get('categorie') or ''
+        region = request.query_params.get('region') or ''
+        q = (request.query_params.get('q') or '').strip().lower()
+
+        def nom(acteur):
+            return f"{acteur.prenom} {acteur.nom}".strip() if acteur else 'Système'
+
+        lignes = []
+        if categorie in ('', 'zone'):
+            qs = HistoriqueStatutZone.objects.filter(date__gte=depuis).select_related('zone', 'acteur')
+            if region:
+                qs = qs.filter(zone__region=region)
+            for h in qs[: self.LIMITE]:
+                lignes.append({'categorie': 'zone', 'date': h.date, 'objet': str(h.zone), 'region': h.zone.region,
+                               'action': f"{h.get_statut_precedent_display()} → {h.get_statut_nouveau_display()}",
+                               'commentaire': h.commentaire, 'acteur': nom(h.acteur), 'role': ROLE_LIBELLE.get(h.role_acteur, h.role_acteur)})
+        if categorie in ('', 'signalement'):
+            qs = HistoriqueStatutSignalement.objects.filter(date__gte=depuis).select_related('signalement', 'acteur')
+            if region:
+                qs = qs.filter(signalement__region=region)
+            for h in qs[: self.LIMITE]:
+                action = ('Observation' if h.statut_precedent == h.statut_nouveau
+                          else f"{h.get_statut_precedent_display()} → {h.get_statut_nouveau_display()}")
+                lignes.append({'categorie': 'signalement', 'date': h.date, 'objet': f"Signalement #{h.signalement_id}",
+                               'region': h.signalement.region, 'action': action, 'commentaire': h.commentaire,
+                               'acteur': nom(h.acteur), 'role': ROLE_LIBELLE.get(h.role_acteur, h.role_acteur)})
+        if categorie in ('', 'incident'):
+            qs = ObservationIncident.objects.filter(date__gte=depuis).select_related('incident__boitier', 'acteur')
+            if region:
+                qs = qs.filter(incident__boitier__region=region)
+            for h in qs[: self.LIMITE]:
+                action = (f"{h.get_statut_precedent_display()} → {h.get_statut_nouveau_display()}" if h.statut_nouveau
+                          else 'Observation')
+                lignes.append({'categorie': 'incident', 'date': h.date, 'objet': f"Incident #{h.incident_id}",
+                               'region': h.incident.boitier.region, 'action': action, 'commentaire': h.texte,
+                               'acteur': nom(h.acteur), 'role': ROLE_LIBELLE.get(h.role_acteur, h.role_acteur)})
+        if categorie in ('', 'boitier'):
+            qs = HistoriqueBoitier.objects.filter(date__gte=depuis).select_related('boitier', 'acteur', 'conducteur')
+            if region:
+                qs = qs.filter(boitier__region=region)
+            for h in qs[: self.LIMITE]:
+                qui = f" ({h.conducteur.prenom} {h.conducteur.nom})" if h.conducteur else ''
+                lignes.append({'categorie': 'boitier', 'date': h.date,
+                               'objet': f"Boîtier SR-{str(h.boitier_id)[:8].upper()}", 'region': h.boitier.region,
+                               'action': f"{h.get_evenement_display()}{qui}", 'commentaire': h.commentaire,
+                               'acteur': nom(h.acteur), 'role': ROLE_LIBELLE.get(h.role_acteur, h.role_acteur)})
+        if categorie in ('', 'demande'):
+            qs = HistoriqueDemande.objects.filter(date__gte=depuis).select_related('demande', 'acteur')
+            if region:
+                qs = qs.filter(demande__region=region)
+            for h in qs[: self.LIMITE]:
+                lignes.append({'categorie': 'demande', 'date': h.date,
+                               'objet': f"Demande #{h.demande_id} ({h.demande.prenom} {h.demande.nom})",
+                               'region': h.demande.region, 'action': h.get_statut_nouveau_display(),
+                               'commentaire': h.commentaire, 'acteur': nom(h.acteur),
+                               'role': ROLE_LIBELLE.get(h.role_acteur, h.role_acteur)})
+        if q:
+            lignes = [l for l in lignes if q in ' '.join(str(l[c]) for c in ('objet', 'action', 'commentaire', 'acteur')).lower()]
+        lignes.sort(key=lambda l: l['date'], reverse=True)
+        for l in lignes:
+            l['region_libelle'] = Region(l['region']).label if l['region'] in Region.values else None
+        return Response({'jours': jours, 'total': len(lignes), 'lignes': lignes[: self.LIMITE]})
 
 
 class StatistiquesDetailleesView(APIView):

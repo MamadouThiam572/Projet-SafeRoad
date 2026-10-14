@@ -43,6 +43,14 @@ class NotificationAdminViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
             .select_related('incident', 'zone', 'boitier', 'signalement')
         )
 
+    @action(detail=False, methods=['post'], url_path='tout-lire')
+    def tout_lire(self, request):
+        """Marque comme lues toutes les notifications visibles par le compte connecté."""
+        visibles = self.get_queryset()
+        visibles.filter(destinataire=request.user).update(lue=True)
+        request.user.notifications_lues.add(*visibles.filter(destinataire__isnull=True))
+        return Response({'detail': 'Toutes les notifications sont marquées comme lues.'})
+
     @action(detail=True, methods=['patch'], url_path='lue')
     def marquer_lue(self, request, pk=None):
         notification = self.get_object()
