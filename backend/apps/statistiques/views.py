@@ -55,6 +55,31 @@ class StatistiquesPubliquesView(APIView):
         return Response(StatistiquesQuotidiennesSerializer(queryset, many=True).data)
 
 
+class ResumePublicView(APIView):
+    """Compteurs de la carte publique, par région : zones reconnues (seules visibles sur la carte),
+    zones à l'examen et en observation (des NOMBRES uniquement, jamais leur position) et boîtiers
+    actifs."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        S = Zone.StatutValidation
+        groupes = {
+            'zones_reconnues': [S.RECONNUE],
+            'zones_a_examiner': [S.VALIDEE_TECHNIQUEMENT, S.SOUMISE_ANASER],
+            'zones_en_observation': [S.PROPOSEE, S.EN_VERIFICATION],
+        }
+        par_region = {slug: {cle: 0 for cle in (*groupes, 'boitiers_actifs')} for slug, _ in Region.choices}
+        for cle, statuts in groupes.items():
+            for ligne in Zone.objects.filter(actif=True, statut_validation__in=statuts).values('region').annotate(n=Count('id')):
+                if ligne['region'] in par_region:
+                    par_region[ligne['region']][cle] = ligne['n']
+        for ligne in Boitier.objects.filter(statut=Boitier.Statut.ACTIF).values('region').annotate(n=Count('id')):
+            if ligne['region'] in par_region:
+                par_region[ligne['region']]['boitiers_actifs'] = ligne['n']
+        return Response({'par_region': par_region})
+
+
 # Statuts « à traiter » du point de vue de chaque rôle (zones à valider du tableau de bord).
 _ZONES_A_TRAITER_TECHNIQUE = [
     Zone.StatutValidation.PROPOSEE, Zone.StatutValidation.EN_VERIFICATION, Zone.StatutValidation.VALIDEE_TECHNIQUEMENT,

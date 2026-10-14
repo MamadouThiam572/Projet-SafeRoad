@@ -284,3 +284,14 @@ class GenererStatistiquesTests(TestCase):
             sorted(globales.values_list('date', flat=True)),
             [self.hier - timedelta(days=2), self.hier - timedelta(days=1), self.hier],
         )
+
+
+class ResumePublicTests(TestCase):
+    def test_compteurs_publics_par_region_sans_authentification(self):
+        Zone.objects.create(region='dakar', latitude_centre=14.69, longitude_centre=-17.44, rayon_metres=300,
+                            statut_validation=Zone.StatutValidation.RECONNUE)
+        Zone.objects.create(region='dakar', latitude_centre=14.70, longitude_centre=-17.45, rayon_metres=300,
+                            statut_validation=Zone.StatutValidation.SOUMISE_ANASER)
+        Boitier.objects.create(region='dakar')
+        d = APIClient().get('/api/v1/statistiques/publiques/resume/').data['par_region']['dakar']
+        self.assertEqual(d, {'zones_reconnues': 1, 'zones_a_examiner': 1, 'zones_en_observation': 0, 'boitiers_actifs': 1})
