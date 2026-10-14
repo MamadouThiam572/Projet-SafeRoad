@@ -254,3 +254,28 @@ class SignalementTests(TestCase):
             with self.subTest(role=utilisateur.role):
                 self.assertEqual(self.client_pour(utilisateur).delete(url).status_code, 403)
         self.assertTrue(Signalement.objects.filter(pk=signalement.pk).exists())
+
+
+class ObservationEtTransmissionTests(TestCase):
+    def test_observation_et_transmission_tracees_sans_changer_le_statut(self):
+        from rest_framework.test import APIClient
+
+        from apps.comptes.models import Administrateur
+        from apps.conducteurs.models import Conducteur
+        from apps.notifications.models import NotificationAdmin
+
+        conducteur = Conducteur.objects.create_user(email='c@obs.sn', password='x', nom='Ba', prenom='Awa')
+        signalement = Signalement.objects.create(conducteur=conducteur, type_danger='obstacle', latitude=14.69,
+                                                 longitude=-17.44, region='dakar')
+        admin = Administrateur.objects.create_user(email='a@obs.sn', password='x', nom='D', prenom='M',
+                                                   role=Administrateur.Role.ADMIN, region='dakar')
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        base = f'/api/v1/signalements/{signalement.pk}'
+        self.assertEqual(client.post(f'{base}/observations/', {'texte': 'Vu sur place'}, format='json').status_code, 201)
+        self.assertEqual(client.post(f'{base}/transmettre-anaser/', {}, format='json').status_code, 201)
+        signalement.refresh_from_db()
+        self.assertEqual(signalement.statut, 'a_verifier')
+        self.assertEqual(len(client.get(f'{base}/historique/').data), 2)
+        self.assertTrue(NotificationAdmin.objects.filter(audience='anaser', signalement=signalement).exists())
+        self.assertEqual(client.post(f'{base}/observations/', {'texte': ' '}, format='json').status_code, 400)

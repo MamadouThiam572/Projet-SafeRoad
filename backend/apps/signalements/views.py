@@ -44,7 +44,7 @@ class SignalementViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.
             return [EstConducteur()]
         if self.action in ('list', 'retrieve', 'photo'):
             return [(EstConducteur | EstAdminOuAnaser)()]
-        if self.action == 'changer_statut':
+        if self.action in ('changer_statut', 'observations', 'transmettre_anaser'):
             # Le rôle exact autorisé dépend de la transition : voir Signalement.TRANSITIONS.
             return [EstAdministrateur()]
         return [EstAdminOuAnaser()]
@@ -117,6 +117,40 @@ class SignalementViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.
                 acteur=request.user, role_acteur=role, commentaire=commentaire,
             )
         return Response(self.get_serializer(signalement).data)
+
+    @action(detail=True, methods=['post'])
+    def observations(self, request, pk=None):
+        """Observation de l'administrateur sans changement de statut : tracée dans l'historique."""
+        signalement = self.get_object()
+        texte = (request.data.get('texte') or '').strip()
+        if not texte:
+            raise ValidationError({'texte': "L'observation est vide."})
+        HistoriqueStatutSignalement.objects.create(
+            signalement=signalement, statut_precedent=signalement.statut, statut_nouveau=signalement.statut,
+            acteur=request.user, role_acteur=getattr(request.user, 'role', ''), commentaire=texte,
+        )
+        return Response({'detail': 'Observation ajoutée.'}, status=201)
+
+    @action(detail=True, methods=['post'], url_path='transmettre-anaser')
+    def transmettre_anaser(self, request, pk=None):
+        """Porte le signalement à l'attention de l'ANASER (notification de son espace), avec un mot
+        facultatif ; la transmission est tracée dans l'historique."""
+        from apps.notifications.models import NotificationAdmin
+
+        signalement = self.get_object()
+        note = (request.data.get('commentaire') or '').strip()
+        NotificationAdmin.objects.create(
+            type_notification=NotificationAdmin.TypeNotification.NOUVEAU_SIGNALEMENT,
+            audience=NotificationAdmin.Audience.ANASER, signalement=signalement,
+            message=f"Signalement #{signalement.pk} ({signalement.get_type_danger_display()}, "
+                    f"{signalement.get_region_display()}) transmis pour information{f' : {note}' if note else ''}."[:255],
+        )
+        HistoriqueStatutSignalement.objects.create(
+            signalement=signalement, statut_precedent=signalement.statut, statut_nouveau=signalement.statut,
+            acteur=request.user, role_acteur=getattr(request.user, 'role', ''),
+            commentaire=f"Transmis à l'ANASER pour information{f' : {note}' if note else ''}",
+        )
+        return Response({'detail': "Signalement transmis à l'ANASER."}, status=201)
 
     @action(detail=True, methods=['get'])
     def historique(self, request, pk=None):
