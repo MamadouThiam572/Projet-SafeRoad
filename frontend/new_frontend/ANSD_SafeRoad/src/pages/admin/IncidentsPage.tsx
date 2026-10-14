@@ -16,7 +16,6 @@ import { useEnDirect } from '@/hooks/useEnDirect'
 import { getIncidents } from '@/lib/api'
 import { daysSince } from '@/lib/period'
 import { formatCoords, regionCenter, regionLabel } from '@/lib/regions'
-import { IncidentsEnDirect } from '@/components/incidents/IncidentsEnDirect'
 
 const NATIONAL_CENTER: [number, number] = [14.45, -14.6]
 
@@ -220,10 +219,6 @@ export function IncidentsPage({ national = false }: { national?: boolean }) {
           )}
         </div>
       </section>
-
-      <div className="mx-6 mt-5">
-        <IncidentsEnDirect />
-      </div>
 
       <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((kpi) => (

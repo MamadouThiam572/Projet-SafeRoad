@@ -27,7 +27,6 @@ import { useEnDirect } from '@/hooks/useEnDirect'
 import { ajouterObservationIncident, ApiError, changerStatutIncident, getHistoriqueIncident, getIncidents } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
-import { IncidentsEnDirect } from '@/components/incidents/IncidentsEnDirect'
 
 /**
  * Super Admin → Incidents : vue NATIONALE des événements routiers détectés par
@@ -954,14 +953,6 @@ export function IncidentsPage() {
           {erreur && <p className="m-0 text-[10.5px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
-
-      {/* Données réelles des boîtiers ; le reste de la page est encore en démonstration. */}
-      <div className="mx-6 mt-5">
-        <IncidentsEnDirect />
-        <p className="m-0 mt-2 text-[11.5px] font-medium text-faint">
-          Les indicateurs, la carte et la liste ci-dessous sont encore des données de démonstration.
-        </p>
-      </div>
 
       {/* Cartes de synthèse (cliquables : elles filtrent la carte et la liste) */}
       <section className="mx-6 mt-4.5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
