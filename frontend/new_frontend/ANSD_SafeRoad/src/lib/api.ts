@@ -432,6 +432,11 @@ export interface IncidentApi {
   nombre_satellites?: number | null
   position_fiable: boolean
   zone: number | null
+  /** Contexte du boîtier détecteur (listes de gestion). */
+  region?: string | null
+  immatriculation?: string
+  zone_nom?: string | null
+  conducteur?: { id: string; nom: string; telephone: string } | null
 }
 
 export type StatutIncidentApi = 'nouveau' | 'en_cours' | 'valide' | 'cloture' | 'rejete'

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -8,15 +8,13 @@ import {
   GRAVITE_META,
   GRAVITE_ORDER,
   INCIDENT_TYPES,
-  INITIAL_INCIDENTS,
-  LOCALITY_NAMES,
   STATUT_META,
   STATUT_ORDER,
   TYPE_ICON,
-  baseHistory,
-  driverById,
-  driverExtras,
+  conducteursIncidents as driverById,
+  extrasConducteur as driverExtras,
   incidentDate,
+  incidentNationalDepuisApi,
   incidentTime,
   needsAttention,
   type Gravite,
@@ -25,6 +23,8 @@ import {
   type IncidentType,
   type Statut,
 } from '@/data/superAdminIncidents'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { ajouterObservationIncident, ApiError, changerStatutIncident, getHistoriqueIncident, getIncidents } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 import { IncidentsEnDirect } from '@/components/incidents/IncidentsEnDirect'
@@ -34,10 +34,13 @@ import { IncidentsEnDirect } from '@/components/incidents/IncidentsEnDirect'
  * les boîtiers SafeRoad (type, localisation, boîtier détecteur, conducteur et
  * véhicule concernés, gravité, statut, détail).
  *
- * Les incidents suivent les séries du Dashboard national : mêmes totaux pour une
- * même région et une même période. Données de démonstration ; les modifications
- * de statut sont locales (// TODO backend).
+ * Données réelles du backend (GET /incidents/, 90 derniers jours) ; les changements de
+ * statut et les observations sont enregistrés (PATCH /incidents/{id}/statut/, POST
+ * /incidents/{id}/observations/) et l'historique vient de GET /incidents/{id}/historique/.
  */
+
+/** Incidents nationaux les plus récents (le backend pagine par curseur). */
+const chargerIncidents = () => getIncidents(2000)
 
 type Periode = 'aujourdhui' | '7j' | '30j' | '3m' | 'perso'
 
@@ -63,14 +66,14 @@ const regionName = (slug: string) => REGION_STATS.find((r) => r.slug === slug)?.
 
 const p2 = (n: number) => String(n).padStart(2, '0')
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
-/** Horodatage court d'une action faite maintenant dans la page : JJ/MM HH:mm. */
-function stampNow(): string {
-  const d = new Date()
+/** Horodatage court d'une entrée d'historique : JJ/MM HH:mm. */
+function stamp(iso: string): string {
+  const d = new Date(iso)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
@@ -489,17 +492,22 @@ interface RowMenu {
   up: boolean
 }
 
-interface Override {
-  statut: Statut
-  extra: HistoryItem[]
-}
-
 type SortKey = 'date' | 'gravite'
 
 export function IncidentsPage() {
   const { user } = useAuth()
-  const incidents = INITIAL_INCIDENTS
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Incidents réels, rechargés toutes les 30 s (ordre chronologique, comme la démonstration).
+  const { donnees, erreur, maj, recharger } = useEnDirect(chargerIncidents, 30_000)
+  const incidents = useMemo(
+    () =>
+      (donnees ?? [])
+        .map(incidentNationalDepuisApi)
+        .filter((i): i is Incident => i !== null)
+        .sort((a, b) => a.day - b.day || a.minute - b.minute || a.num - b.num),
+    [donnees],
+  )
+  const lastRefresh = formatNow(maj)
+  const [historiques, setHistoriques] = useState<Record<string, HistoryItem[]>>({})
   const [refreshing, setRefreshing] = useState(false)
 
   const [region, setRegion] = useState<'toutes' | string>('toutes')
@@ -516,8 +524,7 @@ export function IncidentsPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
   const [page, setPage] = useState(1)
 
-  const [overrides, setOverrides] = useState<Record<string, Override>>({})
-  const [selectedId, setSelectedId] = useState<string | null>(incidents[incidents.length - 1]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [popupId, setPopupId] = useState<string | null>(null)
   const [focus, setFocus] = useState<Focus>(NATIONAL_FOCUS)
@@ -528,9 +535,9 @@ export function IncidentsPage() {
   const mapRef = useRef<HTMLElement | null>(null)
   const popupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const actor = user ? `Super Admin : ${user.firstName[0] ?? ''}. ${user.lastName}` : 'Super Admin'
+  const peutTraiter = user?.role === 'super_admin' || user?.role === 'sous_admin'
 
-  const statutOf = (i: Incident): Statut => overrides[i.id]?.statut ?? i.statut
+  const statutOf = (i: Incident): Statut => i.statut
 
   const byId = useMemo(() => new Map(incidents.map((i) => [i.id, i])), [incidents])
 
@@ -578,27 +585,33 @@ export function IncidentsPage() {
     let valides = 0
     let attention = 0
     for (const i of scoped) {
-      const s = overrides[i.id]?.statut ?? i.statut
+      const s = i.statut
       if (i.gravite === 'critique') critiques++
       if (s === 'en_cours') enCours++
       if (s === 'valide') valides++
       if (needsAttention(i.gravite, s)) attention++
     }
     return { total: scoped.length, critiques, enCours, valides, attention }
-  }, [scoped, overrides])
+  }, [scoped])
+
+  /** Localités (zones) où des incidents réels ont été détectés, par région. */
+  const nomsLocalites = useCallback(
+    (slug: string) => [...new Set(incidents.filter((i) => i.region === slug).map((i) => i.locality))].sort((a, b) => a.localeCompare(b, 'fr')),
+    [incidents],
+  )
 
   const localiteOptions = useMemo(
     () =>
       region === 'toutes'
-        ? REGION_STATS.map((r) => ({ label: r.label, names: [...(LOCALITY_NAMES[r.slug] ?? [])].sort((a, b) => a.localeCompare(b, 'fr')) }))
-        : [{ label: '', names: [...(LOCALITY_NAMES[region] ?? [])].sort((a, b) => a.localeCompare(b, 'fr')) }],
-    [region],
+        ? REGION_STATS.map((r) => ({ label: r.label, names: nomsLocalites(r.slug) })).filter((g) => g.names.length > 0)
+        : [{ label: '', names: nomsLocalites(region) }],
+    [region, nomsLocalites],
   )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     const rows = scoped.filter((i) => {
-      const s = overrides[i.id]?.statut ?? i.statut
+      const s = i.statut
       if (typeF !== 'tous' && i.type !== typeF) return false
       if (graviteF !== 'tous' && i.gravite !== graviteF) return false
       if (statutF !== 'tous' && s !== statutF) return false
@@ -622,7 +635,7 @@ export function IncidentsPage() {
         ? f * (a.num - b.num)
         : f * (GRAVITE_ORDER.indexOf(b.gravite) - GRAVITE_ORDER.indexOf(a.gravite)) || b.num - a.num,
     )
-  }, [scoped, overrides, search, typeF, graviteF, statutF, localiteF, attentionF, sort])
+  }, [scoped, search, typeF, graviteF, statutF, localiteF, attentionF, sort])
 
   /**
    * Points de la carte. Au-delà de MAP_LIMIT, on dessine un échantillon qui met
@@ -656,7 +669,28 @@ export function IncidentsPage() {
   const statusInc = statusId ? (byId.get(statusId) ?? null) : null
   const profileInc = profile ? (byId.get(profile.id) ?? null) : null
 
-  const historyOf = (i: Incident): HistoryItem[] => [...baseHistory(i), ...(overrides[i.id]?.extra ?? [])]
+  const historyOf = (i: Incident): HistoryItem[] => [
+    { at: incidentTime(i), text: `Incident détecté par ${i.boitierId}` },
+    ...(historiques[i.id] ?? []),
+  ]
+
+  // Historique réel (décisions et observations) de l'incident ouvert.
+  const ouvert = selectedId ? (byId.get(selectedId) ?? null) : null
+  const ouvertNum = ouvert?.num ?? null
+  const ouvertId = ouvert?.id ?? null
+  const chargerHistorique = useCallback(async (num: number, id: string) => {
+    const lignes = await getHistoriqueIncident(num).catch(() => [])
+    setHistoriques((prev) => ({
+      ...prev,
+      [id]: lignes.map((h) => ({
+        at: stamp(h.date),
+        text: `${h.statut_nouveau ? `Statut → ${h.statut_nouveau_libelle}` : 'Observation'}${h.texte ? ` : « ${h.texte} »` : ''} (${h.acteur_nom ?? 'compte supprimé'})`,
+      })),
+    }))
+  }, [])
+  useEffect(() => {
+    if (ouvertNum !== null && ouvertId) void chargerHistorique(ouvertNum, ouvertId)
+  }, [ouvertNum, ouvertId, maj, chargerHistorique])
 
   /* --- Effets ----------------------------------------------------------- */
 
@@ -761,21 +795,27 @@ export function IncidentsPage() {
   }
 
   const refresh = () => {
-    // TODO backend : recharger la liste, les compteurs et la carte
-    setLastRefresh(formatNow())
+    void recharger()
     setRefreshing(true)
     setToast('Données actualisées.')
   }
 
-  const saveStatus = (inc: Incident, statut: Statut, note: string) => {
-    // TODO backend : PATCH du statut de l'incident + ajout d'une observation à son historique
-    const current = overrides[inc.id]?.statut ?? inc.statut
-    const extra: HistoryItem[] = []
-    if (statut !== current) extra.push({ at: stampNow(), text: `Statut → ${STATUT_META[statut].label} (${actor})` })
-    if (note) extra.push({ at: stampNow(), text: `Observation : « ${note} » (${actor})` })
-    setOverrides((prev) => ({ ...prev, [inc.id]: { statut, extra: [...(prev[inc.id]?.extra ?? []), ...extra] } }))
-    setStatusId(null)
-    setToast(statut !== current ? `${inc.id} : statut « ${STATUT_META[statut].label} ».` : 'Observation ajoutée.')
+  /** Décision enregistrée par le backend (qui vérifie le rôle, la transition et le motif). */
+  const saveStatus = async (inc: Incident, statut: Statut, note: string) => {
+    if (!peutTraiter) {
+      setToast("L'ANASER consulte les incidents sans les traiter.")
+      return
+    }
+    try {
+      if (statut !== inc.statut) await changerStatutIncident(inc.num, statut, note)
+      else if (note) await ajouterObservationIncident(inc.num, note)
+      setStatusId(null)
+      setToast(statut !== inc.statut ? `${inc.id} : statut « ${STATUT_META[statut].label} ».` : 'Observation ajoutée.')
+      await recharger()
+      await chargerHistorique(inc.num, inc.id)
+    } catch (err) {
+      setToast(err instanceof ApiError ? err.message : 'Action non enregistrée : serveur injoignable.')
+    }
   }
 
   /** Les cartes de synthèse servent aussi de raccourcis de filtre. */
@@ -911,6 +951,7 @@ export function IncidentsPage() {
             </div>
           )}
           <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh}</p>
+          {erreur && <p className="m-0 text-[10.5px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
 

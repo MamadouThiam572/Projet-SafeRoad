@@ -10,6 +10,7 @@ import { CarteRegionalePage } from '@/pages/admin/CarteRegionalePage'
 import { DashboardPage as AdminDashboardPage } from '@/pages/admin/DashboardPage'
 import { HistoriquePage as AdminHistoriquePage } from '@/pages/admin/HistoriquePage'
 import { IncidentsPage as AdminIncidentsPage } from '@/pages/admin/IncidentsPage'
+import { IncidentsPage as SuperAdminIncidentsPage } from '@/pages/superadmin/IncidentsPage'
 import { MonitoringPage as AdminMonitoringPage } from '@/pages/admin/MonitoringPage'
 import { SignalementsPage as AdminSignalementsPage } from '@/pages/admin/SignalementsPage'
 import { ZonesPage as AdminZonesPage } from '@/pages/admin/ZonesPage'
@@ -121,8 +122,7 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.utilisateurs} element={<SuperAdminUtilisateursPage />} />
           <Route path={PATHS.superAdmin.boitiers} element={<SuperAdminBoitiersPage />} />
           <Route path={PATHS.superAdmin.monitoring} element={<SuperAdminMonitoringPage />} />
-          {/* Vue réelle commune ; la page détaillée pages/superadmin/IncidentsPage.tsx est mise de côté. */}
-          <Route path={PATHS.superAdmin.incidents} element={<AdminIncidentsPage national />} />
+          <Route path={PATHS.superAdmin.incidents} element={<SuperAdminIncidentsPage />} />
           {/* Vue réelle commune ; la page détaillée pages/superadmin/SignalementsPage.tsx est mise de côté. */}
           <Route path={PATHS.superAdmin.signalements} element={<AdminSignalementsPage national />} />
           {/* Vue réelle commune (validation, archivage, recalcul). La page détaillée pages/superadmin/ZonesPage.tsx

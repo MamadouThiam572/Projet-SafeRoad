@@ -21,10 +21,11 @@
  */
 
 import { INITIAL_BOITIERS, INITIAL_CONDUCTEURS, type Boitier, type Conducteur } from '@/data/superAdminBoitiers'
+import type { IncidentApi } from '@/lib/api'
 import { RECENT_DAYS, REGION_SERIES, REGION_STATS, SERIES_DATES, SERIES_DAYS } from '@/data/superAdminHome'
 
 export type Gravite = 'critique' | 'elevee' | 'moyenne' | 'faible'
-export type Statut = 'nouveau' | 'en_cours' | 'valide' | 'cloture'
+export type Statut = 'nouveau' | 'en_cours' | 'valide' | 'cloture' | 'rejete'
 
 /**
  * Signaux de risque détectés par le boîtier (croisement des capteurs), avant tout accident :
@@ -75,16 +76,17 @@ export const GRAVITE_META: Record<Gravite, { label: string; color: string; soft:
   faible: { label: 'Faible', color: '#1f9d55', soft: '#e9f6ee', text: '#1a8248', icon: 'check_circle' },
 }
 
-export const STATUT_ORDER: Statut[] = ['nouveau', 'en_cours', 'valide', 'cloture']
+export const STATUT_ORDER: Statut[] = ['nouveau', 'en_cours', 'valide', 'cloture', 'rejete']
 
 export const STATUT_META: Record<Statut, { label: string; soft: string; text: string; icon: string; hint: string }> = {
   nouveau: { label: 'Nouveau', soft: '#f1eafe', text: '#6d28d9', icon: 'fiber_new', hint: 'Détecté, pas encore pris en charge.' },
   en_cours: { label: 'En cours', soft: '#e8f0f9', text: '#2b6cb0', icon: 'pending', hint: 'Pris en charge, en cours de suivi.' },
   valide: { label: 'Validé', soft: '#e9f6ee', text: '#1a8248', icon: 'verified', hint: 'Événement confirmé.' },
   cloture: { label: 'Clôturé', soft: '#eef2f5', text: '#5b6b78', icon: 'task_alt', hint: 'Traité, plus aucune action attendue.' },
+  rejete: { label: 'Rejeté (faux positif)', soft: '#fdeeec', text: '#c4281d', icon: 'block', hint: 'Fausse détection écartée (motif obligatoire) : ne compte plus dans les zones.' },
 }
 
-export const TYPE_ICON: Record<IncidentType, string> = {
+export const TYPE_ICON: Record<string, string> = {
   'Excès de vitesse': 'speed',
   'Freinage brusque': 'front_hand',
   'Accélération brusque': 'moving',
@@ -92,6 +94,8 @@ export const TYPE_ICON: Record<IncidentType, string> = {
   'Secousse dangereuse': 'waves',
   'Route dégradée': 'edit_road',
   'Obstacle critique': 'warning',
+  Accident: 'car_crash',
+  Autre: 'help',
 }
 
 /** Un incident nécessite une attention particulière : critique et pas encore traité. */
@@ -421,4 +425,52 @@ export function baseHistory(i: Incident): HistoryItem[] {
   if (i.statut === 'en_cours') return items
   items.push({ at: stamp(o3), text: 'Observation ajoutée' }, { at: stamp(o4), text: i.statut === 'valide' ? 'Statut → Validé' : 'Statut → Clôturé' })
   return items
+}
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /incidents/)                        */
+/* ------------------------------------------------------------------ */
+
+/** Conducteurs des incidents réels (remplis par incidentNationalDepuisApi), par identifiant. */
+export const conducteursIncidents = new Map<string, Conducteur>()
+const coordonnees = new Map<string, { phone: string; model: string }>()
+
+/** Téléphone du conducteur (donnée réelle) ; le modèle du véhicule n'est pas encore enregistré. */
+export function extrasConducteur(conducteurId: string): { phone: string; model: string } {
+  return coordonnees.get(conducteurId) ?? { phone: 'Non renseigné', model: 'Non renseigné' }
+}
+
+const GRAVITE_API: Record<IncidentApi['niveau_gravite'], Gravite> = { critique: 'critique', moyen: 'moyenne', faible: 'faible' }
+
+/**
+ * Incident du backend -> ligne de la page (même forme que les données de démonstration). Les
+ * jours sont repérés dans les 90 jours de SERIES_DATES (UTC = heure du Sénégal) ; un incident
+ * plus ancien est écarté (null).
+ */
+export function incidentNationalDepuisApi(a: IncidentApi): Incident | null {
+  const iso = new Date(a.horodatage).toISOString()
+  const day = SERIES_DATES.indexOf(iso.slice(0, 10))
+  if (day < 0) return null
+  const c = a.conducteur
+  if (c) {
+    conducteursIncidents.set(c.id, { id: c.id, name: c.nom, region: a.region ?? '', plate: a.immatriculation || 'véhicule non renseigné' })
+    coordonnees.set(c.id, { phone: c.telephone || 'Non renseigné', model: 'Non renseigné' })
+  }
+  return {
+    id: `INC-${p2(a.id)}`,
+    num: a.id,
+    region: a.region ?? '',
+    locality: a.zone_nom ?? 'Hors zone connue',
+    type: a.type_incident_libelle as IncidentType,
+    gravite: GRAVITE_API[a.niveau_gravite],
+    statut: a.statut as Statut,
+    day,
+    minute: Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+    lat: a.latitude,
+    lng: a.longitude,
+    boitierId: `SR-${a.boitier.slice(0, 8).toUpperCase()}`,
+    conducteurId: c?.id ?? '',
+    vitesseGps: a.vitesse_gps ?? 0,
+    vitesseRadar: a.vitesse_radar ?? 0,
+  }
 }
