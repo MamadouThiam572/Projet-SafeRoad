@@ -8,7 +8,7 @@ export const STATUS_META: Record<
   { label: string; color: string; textClass: string; bgClass: string; glyph: string; baseRadiusM: number }
 > = {
   validee: {
-    label: 'Zone critique',
+    label: 'Zone à risque validée',
     color: '#dc3a2f',
     textClass: 'text-danger-600',
     bgClass: 'bg-danger-600',
@@ -24,7 +24,7 @@ export const STATUS_META: Record<
     baseRadiusM: 900,
   },
   observation: {
-    label: 'Zone de vigilance',
+    label: 'Maintenue en observation',
     color: '#e8940c',
     textClass: 'text-warning-600',
     bgClass: 'bg-warning-600',
@@ -32,7 +32,7 @@ export const STATUS_META: Record<
     baseRadiusM: 900,
   },
   normale: {
-    label: 'Zone à risque modéré',
+    label: 'Zone normale',
     color: '#1f9d55',
     textClass: 'text-success-600',
     bgClass: 'bg-success-600',
@@ -380,12 +380,6 @@ export const LOCALITIES: Locality[] = [
   },
 ]
 
-const NIVEAU_VERS_STATUT: Record<ZoneApi['niveau_danger'], ZoneStatus> = {
-  critique: 'validee',
-  vigilance: 'observation',
-  normale: 'normale',
-}
-
 /** Zone reconnue par l'ANASER (API publique) -> localité de la carte, colorée selon son niveau. */
 export function localiteDepuisZone(z: ZoneApi): Locality {
   const t = new Date(z.date_maj)
@@ -397,7 +391,8 @@ export function localiteDepuisZone(z: ZoneApi): Locality {
     region: z.region_libelle ?? 'Région inconnue',
     lat: z.latitude_centre,
     lng: z.longitude_centre,
-    status: NIVEAU_VERS_STATUT[z.niveau_danger],
+    // Seules les zones reconnues par l'ANASER sont publiques : ce sont les « zones à risque validées ».
+    status: 'validee',
     incidents30d: z.nombre_incidents,
     signalements: z.nombre_signalements,
     lastDetection: `mise à jour le ${date}`,

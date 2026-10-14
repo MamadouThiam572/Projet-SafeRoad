@@ -53,6 +53,16 @@ export async function getZonesPubliques(): Promise<ZoneApi[]> {
   return res.json()
 }
 
+/** Compteurs publics par région (nombres seulement) : zones reconnues, à l'examen, en observation, boîtiers actifs. */
+export function getResumePublic(): Promise<{
+  par_region: Record<string, { zones_reconnues: number; zones_a_examiner: number; zones_en_observation: number; boitiers_actifs: number }>
+}> {
+  return fetch(`${API_BASE}/statistiques/publiques/resume/`).then((r) => {
+    if (!r.ok) throw new ApiError('Compteurs indisponibles.', r.status)
+    return r.json()
+  })
+}
+
 export type SujetContact = 'question' | 'signalement' | 'suggestion' | 'partenariat' | 'support' | 'autre'
 
 /** Formulaire public Contact (sans compte, limité par IP) : lu par le super admin. */
