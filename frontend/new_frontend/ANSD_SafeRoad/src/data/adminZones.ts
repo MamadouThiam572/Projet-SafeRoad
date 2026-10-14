@@ -1,3 +1,5 @@
+import type { IncidentApi, ZoneApi } from '@/lib/api'
+
 /**
  * Données de la page /admin/zones (« Zones à valider » — vue « Zones à risque »
  * de l'administrateur régional). Toujours des données de démonstration en
@@ -215,3 +217,56 @@ export const ZONES_TENDANCES: Record<RiskLevel, string> = {
 }
 
 export const TAUX_RECURRENCE_7J = { valeur: 38, tendance: '+6%' }
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /zones/ + incidents des boîtiers)    */
+/* ------------------------------------------------------------------ */
+
+const p2 = (n: number) => String(n).padStart(2, '0')
+const jourIso = (t: Date) => `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())}`
+const dateHeure = (iso: string) => {
+  const t = new Date(iso)
+  return `${p2(t.getDate())}/${p2(t.getMonth() + 1)}/${t.getFullYear()} ${p2(t.getHours())}:${p2(t.getMinutes())}`
+}
+
+/** Zone réelle + son objet backend (décisions, historique). */
+export interface ZoneRisqueReelle extends ZoneRisque {
+  api: ZoneApi
+}
+
+/**
+ * Zone du backend -> ligne de la page (même forme que la démonstration) : type dominant, vitesse
+ * moyenne, incidents des 7 derniers jours et courbe d'évolution calculés sur les vrais incidents
+ * rattachés à la zone ; position relative au centre affiché (offset).
+ */
+export function zoneRisqueDepuisApi(z: ZoneApi, incidents: IncidentApi[], centre: [number, number]): ZoneRisqueReelle {
+  const siens = incidents.filter((i) => i.zone === z.id).sort((a, b) => b.horodatage.localeCompare(a.horodatage))
+  const jours = Array.from({ length: 7 }, (_, k) => {
+    const d = new Date()
+    d.setDate(d.getDate() - 6 + k)
+    return d
+  })
+  const evolution = jours.map((d) => ({
+    date: `${p2(d.getDate())}/${p2(d.getMonth() + 1)}`,
+    valeur: siens.filter((i) => jourIso(new Date(i.horodatage)) === jourIso(d)).length,
+  }))
+  const parType = new Map<string, number>()
+  for (const i of siens) parType.set(i.type_incident_libelle, (parType.get(i.type_incident_libelle) ?? 0) + 1)
+  const type = [...parType.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
+  const vitesses = siens.map((i) => i.vitesse_gps).filter((v): v is number => v != null)
+  return {
+    id: `ZD-${String(z.id).padStart(3, '0')}`,
+    nom: z.nom || `Zone #${z.id}`,
+    localite: z.region_libelle ?? 'Région inconnue',
+    type,
+    niveau: z.niveau_danger,
+    incidents: evolution.reduce((a, e) => a + e.valeur, 0),
+    avgSpeed: vitesses.length ? Math.round(vitesses.reduce((a, v) => a + v, 0) / vitesses.length) : 0,
+    lastDetection: dateHeure(siens[0]?.horodatage ?? z.date_maj),
+    offset: [z.latitude_centre - centre[0], z.longitude_centre - centre[1]],
+    statut: z.statut_validation === 'reconnue' ? 'validee' : 'en_cours',
+    evolution,
+    commentaires: [],
+    api: z,
+  }
+}
