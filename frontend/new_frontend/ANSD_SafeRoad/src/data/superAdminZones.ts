@@ -34,9 +34,10 @@
 import { RECENT_DAYS, REGION_STATS, SERIES_DATES, SERIES_DAYS } from '@/data/superAdminHome'
 import { INITIAL_INCIDENTS, INCIDENT_TYPES, type Gravite, type Incident } from '@/data/superAdminIncidents'
 import { INITIAL_SIGNALEMENTS, type Signalement } from '@/data/superAdminSignalements'
+import type { ZoneApi } from '@/lib/api'
 
 export type ZoneRisk = 'faible' | 'moyen' | 'eleve' | 'critique'
-export type ZoneStatut = 'a_valider' | 'a_analyser' | 'validee' | 'rejetee'
+export type ZoneStatut = 'proposee' | 'en_verification' | 'validee_technique' | 'soumise_anaser' | 'reconnue' | 'rejetee' | 'archivee'
 
 export const RISK_ORDER: ZoneRisk[] = ['critique', 'eleve', 'moyen', 'faible']
 
@@ -47,13 +48,57 @@ export const RISK_META: Record<ZoneRisk, { label: string; color: string; soft: s
   faible: { label: 'Faible', color: '#1f9d55', soft: '#e9f6ee', text: '#1a8248', icon: 'check_circle', radius: 7 },
 }
 
-export const ZSTATUT_ORDER: ZoneStatut[] = ['a_valider', 'a_analyser', 'validee', 'rejetee']
+/** Circuit réel (backend, Zone.StatutValidation) : validation technique puis reconnaissance ANASER. */
+export const ZSTATUT_ORDER: ZoneStatut[] = ['proposee', 'en_verification', 'validee_technique', 'soumise_anaser', 'reconnue', 'rejetee', 'archivee']
 
 export const ZSTATUT_META: Record<ZoneStatut, { label: string; color: string; soft: string; text: string; icon: string; hint: string }> = {
-  a_valider: { label: 'À valider', color: '#e8940c', soft: '#fdf4e6', text: '#b86e00', icon: 'schedule', hint: 'Analyse terminée : en attente de décision.' },
-  a_analyser: { label: 'À analyser', color: '#2b6cb0', soft: '#e8f0f9', text: '#245a94', icon: 'troubleshoot', hint: 'Données complémentaires en cours de collecte avant décision.' },
-  validee: { label: 'Validée', color: '#1f9d55', soft: '#e9f6ee', text: '#1a8248', icon: 'check_circle', hint: 'Zone officiellement retenue comme accidentogène.' },
+  proposee: { label: 'Proposée', color: '#e8940c', soft: '#fdf4e6', text: '#b86e00', icon: 'schedule', hint: "Détectée par l'analyse : en attente de vérification technique." },
+  en_verification: { label: 'En vérification', color: '#2b6cb0', soft: '#e8f0f9', text: '#245a94', icon: 'troubleshoot', hint: 'Vérification technique en cours (terrain, données complémentaires).' },
+  validee_technique: { label: 'Validée techniquement', color: '#0e7490', soft: '#e0f2f7', text: '#0e5f75', icon: 'verified', hint: "Confirmée par l'administrateur : à soumettre à l'ANASER." },
+  soumise_anaser: { label: "Soumise à l'ANASER", color: '#7c3aed', soft: '#f1eafe', text: '#6d28d9', icon: 'send', hint: "En attente de la reconnaissance officielle de l'ANASER." },
+  reconnue: { label: "Reconnue par l'ANASER", color: '#1f9d55', soft: '#e9f6ee', text: '#1a8248', icon: 'check_circle', hint: 'Zone officielle : publique et alerte les conducteurs.' },
   rejetee: { label: 'Rejetée', color: '#dc3a2f', soft: '#fdeeec', text: '#c4281d', icon: 'cancel', hint: "Non retenue (événements isolés, cause ponctuelle, travaux terminés…)." },
+  archivee: { label: 'Archivée', color: '#64748b', soft: '#f1f5f9', text: '#475569', icon: 'archive', hint: "Retirée du suivi par l'administration." },
+}
+
+/** Statuts en attente d'une décision technique (administrateurs). */
+export const ZSTATUTS_A_VALIDER: ZoneStatut[] = ['proposee', 'en_verification', 'validee_technique']
+
+export interface DecisionZoneSA {
+  vers: ZoneStatut
+  libelle: string
+  icon: string
+  /** Motif obligatoire (rejet, demande de complément). */
+  motif?: boolean
+  danger?: boolean
+  roles: ('sous_admin' | 'super_admin' | 'anaser')[]
+}
+
+const TECH: DecisionZoneSA['roles'] = ['sous_admin', 'super_admin']
+
+/** Miroir de Zone.TRANSITIONS (le backend reste seul juge). */
+export const DECISIONS_ZONE: Record<ZoneStatut, DecisionZoneSA[]> = {
+  proposee: [
+    { vers: 'en_verification', libelle: 'Lancer la vérification', icon: 'troubleshoot', roles: TECH },
+    { vers: 'validee_technique', libelle: 'Valider techniquement', icon: 'verified', roles: TECH },
+    { vers: 'rejetee', libelle: 'Rejeter', icon: 'cancel', motif: true, danger: true, roles: TECH },
+  ],
+  en_verification: [
+    { vers: 'validee_technique', libelle: 'Valider techniquement', icon: 'verified', roles: TECH },
+    { vers: 'rejetee', libelle: 'Rejeter', icon: 'cancel', motif: true, danger: true, roles: TECH },
+  ],
+  validee_technique: [
+    { vers: 'soumise_anaser', libelle: "Soumettre à l'ANASER", icon: 'send', roles: TECH },
+    { vers: 'rejetee', libelle: 'Rejeter', icon: 'cancel', motif: true, danger: true, roles: TECH },
+  ],
+  soumise_anaser: [
+    { vers: 'reconnue', libelle: 'Reconnaître officiellement', icon: 'check_circle', roles: ['anaser'] },
+    { vers: 'en_verification', libelle: 'Demander un complément', icon: 'help', motif: true, roles: ['anaser'] },
+    { vers: 'rejetee', libelle: 'Rejeter', icon: 'cancel', motif: true, danger: true, roles: ['anaser'] },
+  ],
+  reconnue: [{ vers: 'archivee', libelle: 'Archiver', icon: 'archive', roles: ['super_admin'] }],
+  rejetee: [{ vers: 'archivee', libelle: 'Archiver', icon: 'archive', roles: ['super_admin'] }],
+  archivee: [],
 }
 
 /** Rayon d'une zone (m). */
@@ -145,6 +190,25 @@ for (const s of INITIAL_SIGNALEMENTS) {
   const list = sigsByRegion.get(s.region)
   if (list) list.push(s)
   else sigsByRegion.set(s.region, [s])
+}
+
+/** Remplace les événements des zones par les incidents et signalements réels (page Zones). */
+export function definirEvenementsDesZones(incidents: Incident[], signalements: Signalement[]) {
+  incidentsByRegion.clear()
+  sigsByRegion.clear()
+  eventsCache.clear()
+  analysisCache.clear()
+  for (const i of incidents) {
+    const list = incidentsByRegion.get(i.region)
+    if (list) list.push(i)
+    else incidentsByRegion.set(i.region, [i])
+  }
+  for (const sg of signalements) {
+    if (sg.statut === 'rejete') continue
+    const list = sigsByRegion.get(sg.region)
+    if (list) list.push(sg)
+    else sigsByRegion.set(sg.region, [sg])
+  }
 }
 
 interface Located {
@@ -260,15 +324,15 @@ function build(): Zone[] {
   const byRecent = (a: Candidate, b: Candidate) => late(b, 60) - late(a, 60) || b.recent - a.recent || b.score - a.score
   for (const r of REGION_STATS) {
     const list = all.filter((c) => c.region === r.slug).sort(byRecent)
-    list.slice(0, r.zonesEnAttente).forEach((c) => statutOf.set(c, 'a_valider'))
+    list.slice(0, r.zonesEnAttente).forEach((c) => statutOf.set(c, 'validee_technique'))
   }
   for (const slug of ['thies', 'saint_louis']) {
     const c = all.filter((x) => x.region === slug && !statutOf.has(x)).sort(byRecent)[0]
-    if (c) statutOf.set(c, 'a_analyser')
+    if (c) statutOf.set(c, 'en_verification')
   }
   const rejected = all.filter((c) => !statutOf.has(c)).sort((a, b) => a.score - b.score)[0]
   if (rejected) statutOf.set(rejected, 'rejetee')
-  for (const c of all) if (!statutOf.has(c)) statutOf.set(c, 'validee')
+  for (const c of all) if (!statutOf.has(c)) statutOf.set(c, 'reconnue')
 
   // 4. Dates : une zone à décider est identifiée récemment ; l'identification tombe un jour où la règle est satisfaite.
   const pickDay = (c: Candidate, lo: number, hi: number): number => {
@@ -281,8 +345,8 @@ function build(): Zone[] {
     const statut = statutOf.get(c)!
     let identDay: number
     let decisionDay: number | null = null
-    if (statut === 'a_valider') identDay = pickDay(c, 60, SERIES_DAYS - 1)
-    else if (statut === 'a_analyser') identDay = pickDay(c, 72, SERIES_DAYS - 1)
+    if (statut === 'validee_technique') identDay = pickDay(c, 60, SERIES_DAYS - 1)
+    else if (statut === 'en_verification') identDay = pickDay(c, 72, SERIES_DAYS - 1)
     else if (statut === 'rejetee') {
       identDay = pickDay(c, 15, 55)
       decisionDay = Math.min(SERIES_DAYS - 1, identDay + int(3, 10))
@@ -445,9 +509,9 @@ export function zoneBaseHistory(z: Zone): ZoneHistoryItem[] {
       text: `Zone identifiée par l'analyse : ${n} événements (${id.incidents.length} incident${id.incidents.length > 1 ? 's' : ''}, ${id.signalements.length} signalement${id.signalements.length > 1 ? 's' : ''}) dans un rayon de ${ZONE_RADIUS_M} m en ${ZONE_WINDOW_DAYS} jours.`,
     },
   ]
-  if (z.statut === 'a_analyser') items.push({ at: at(z.identDay, 9, 30), text: 'Données complémentaires demandées avant décision.' })
-  if (z.statut === 'a_valider') items.push({ at: at(z.identDay, 9, 30), text: `Transmise à l'administrateur régional ${region} pour décision.` })
-  if (z.statut === 'validee' && z.decisionDay !== null) {
+  if (z.statut === 'en_verification') items.push({ at: at(z.identDay, 9, 30), text: 'Données complémentaires demandées avant décision.' })
+  if (z.statut === 'validee_technique') items.push({ at: at(z.identDay, 9, 30), text: `Transmise à l'administrateur régional ${region} pour décision.` })
+  if (z.statut === 'reconnue' && z.decisionDay !== null) {
     items.push({ at: at(z.identDay, 9, 30), text: `Transmise à l'administrateur régional ${region} pour décision.` })
     items.push({ at: at(z.decisionDay, 11, 15), text: `Validée par l'administrateur régional ${region}.` })
   }
@@ -456,4 +520,31 @@ export function zoneBaseHistory(z: Zone): ZoneHistoryItem[] {
     items.push({ at: at(z.decisionDay, 14, 5), text: `Rejetée par l'administrateur régional ${region}. Motif : « ${z.rejectReason} »` })
   }
   return items
+}
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /zones/)                            */
+/* ------------------------------------------------------------------ */
+
+const RISQUE_API: Record<ZoneApi['niveau_danger'], ZoneRisk> = { critique: 'critique', vigilance: 'eleve', normale: 'faible' }
+
+/** Zone du backend -> ligne de la page (même forme que la démonstration). */
+export function zoneNationaleDepuisApi(z: ZoneApi): Zone {
+  const jour = SERIES_DATES.indexOf(new Date(z.date_creation).toISOString().slice(0, 10))
+  const identDay = jour < 0 ? 0 : jour
+  return {
+    id: `ZN-${String(z.id).padStart(5, '0')}`,
+    num: z.id,
+    region: z.region ?? '',
+    locality: z.nom || `Zone #${z.id}`,
+    lat: z.latitude_centre,
+    lng: z.longitude_centre,
+    risk: RISQUE_API[z.niveau_danger],
+    score: Math.round(z.score_danger * 10) / 10,
+    statut: z.statut_validation,
+    obsStartDay: Math.max(0, identDay - ZONE_WINDOW_DAYS),
+    identDay,
+    decisionDay: null,
+    rejectReason: null,
+  }
 }

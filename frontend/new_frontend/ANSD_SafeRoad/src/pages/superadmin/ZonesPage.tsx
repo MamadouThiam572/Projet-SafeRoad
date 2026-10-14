@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Circle, CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -7,7 +7,6 @@ import { REGION_STATS, SERIES_DATES, SERIES_DAYS } from '@/data/superAdminHome'
 import { GRAVITE_META, GRAVITE_ORDER, incidentDate, incidentTime } from '@/data/superAdminIncidents'
 import { DANGER_META, sigDate, sigTime } from '@/data/superAdminSignalements'
 import {
-  INITIAL_ZONES,
   RISK_META,
   RISK_ORDER,
   ZONE_MIN_EVENTS,
@@ -15,9 +14,13 @@ import {
   ZONE_WINDOW_DAYS,
   ZSTATUT_META,
   ZSTATUT_ORDER,
+  ZSTATUTS_A_VALIDER,
+  DECISIONS_ZONE,
+  definirEvenementsDesZones,
+  zoneNationaleDepuisApi,
+  type DecisionZoneSA,
   identifyingEvents,
   zoneAnalysis,
-  zoneBaseHistory,
   zoneCounts,
   zoneDate,
   type Zone,
@@ -26,6 +29,10 @@ import {
   type ZoneRisk,
   type ZoneStatut,
 } from '@/data/superAdminZones'
+import { incidentNationalDepuisApi, type Incident } from '@/data/superAdminIncidents'
+import { signalementNationalDepuisApi, type Signalement } from '@/data/superAdminSignalements'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { ApiError, changerStatutZone, genererZones, getHistoriqueZone, getIncidents, getSignalements, getZones } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
@@ -38,9 +45,13 @@ import { PATHS } from '@/routes/paths'
  * ses statistiques. Le Super Admin peut intervenir sur la décision (valider,
  * rejeter avec motif, renvoyer en analyse).
  *
- * Données de démonstration ; les changements de statut sont locaux
- * (// TODO backend).
+ * Données réelles du backend (zones, et incidents et signalements des 90 derniers jours pour
+ * les éléments d'identification et l'analyse). Les décisions suivent le vrai circuit :
+ * validation technique (admins, super admin) puis reconnaissance par l'ANASER ; le backend
+ * vérifie chaque transition et son motif.
  */
+
+const chargerDonnees = () => Promise.all([getZones(), getIncidents(2000), getSignalements()])
 
 type Periode = 'aujourdhui' | '7j' | '30j' | '3m' | 'perso'
 type IdentFilter = 'tous' | '7j' | '30j' | '3m'
@@ -69,14 +80,14 @@ const regionName = (slug: string) => REGION_STATS.find((r) => r.slug === slug)?.
 
 const p2 = (n: number) => String(n).padStart(2, '0')
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
-/** Horodatage court d'une action faite maintenant dans la page : JJ/MM HH:mm. */
-function stampNow(): string {
-  const d = new Date()
+/** Horodatage court d'une entrée d'historique : JJ/MM HH:mm. */
+function stamp(iso: string): string {
+  const d = new Date(iso)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
@@ -315,9 +326,11 @@ interface DetailProps {
   onMenu: (e: ReactMouseEvent<HTMLButtonElement>) => void
   onAction: (preset: ZoneStatut) => void
   onLocate: () => void
+  /** Décisions permises au rôle connecté depuis le statut actuel. */
+  decisions: DecisionZoneSA[]
 }
 
-function DetailPanel({ z, statut, history, counts, periodeLabel, menuOpen, onClose, onMenu, onAction, onLocate }: DetailProps) {
+function DetailPanel({ z, statut, history, counts, periodeLabel, menuOpen, onClose, onMenu, onAction, onLocate, decisions }: DetailProps) {
   const [tab, setTab] = useState<Tab>('general')
   const [showAllInc, setShowAllInc] = useState(false)
   const [showAllSig, setShowAllSig] = useState(false)
@@ -366,35 +379,27 @@ function DetailPanel({ z, statut, history, counts, periodeLabel, menuOpen, onClo
 
       {/* Décision : le Super Admin peut intervenir */}
       <div className="flex flex-wrap gap-2">
-        {(statut === 'a_valider' || statut === 'a_analyser') && (
-          <>
-            <button type="button" onClick={() => onAction('validee')} className={`${btn} bg-success-600 text-white`}>
-              <span className="ic text-lg">check_circle</span>
-              Valider
-            </button>
-            <button type="button" onClick={() => onAction('rejetee')} className={`${btn} border-[1.5px] border-danger-200 bg-white text-danger-600 hover:bg-danger-50`}>
-              <span className="ic text-lg">cancel</span>
-              Rejeter
-            </button>
-          </>
-        )}
-        {statut === 'a_valider' && (
-          <button type="button" onClick={() => onAction('a_analyser')} className={outline}>
-            <span className="ic text-lg">troubleshoot</span>
-            Renvoyer en analyse
+        {decisions.map((d) => (
+          <button
+            key={d.vers}
+            type="button"
+            onClick={() => onAction(d.vers)}
+            className={
+              d.danger
+                ? `${btn} border-[1.5px] border-danger-200 bg-white text-danger-600 hover:bg-danger-50`
+                : d.vers === 'reconnue' || d.vers === 'validee_technique'
+                  ? `${btn} bg-success-600 text-white`
+                  : outline
+            }
+          >
+            <span className="ic text-lg">{d.icon}</span>
+            {d.libelle}
           </button>
-        )}
-        {statut === 'a_analyser' && (
-          <button type="button" onClick={() => onAction('a_valider')} className={outline}>
-            <span className="ic text-lg">schedule</span>
-            Passer à valider
-          </button>
-        )}
-        {(statut === 'validee' || statut === 'rejetee') && (
-          <button type="button" onClick={() => onAction(statut)} className={outline}>
-            <span className="ic text-lg">edit_note</span>
-            Modifier le statut
-          </button>
+        ))}
+        {decisions.length === 0 && (
+          <span className="text-[12px] font-medium text-faint">
+            {statut === 'soumise_anaser' ? "En attente de la décision de l'ANASER." : 'Aucune décision à prendre sur cette zone.'}
+          </span>
         )}
       </div>
 
@@ -629,20 +634,24 @@ function StatusForm({
   z,
   current,
   preset,
+  decisions,
   onSubmit,
   onClose,
 }: {
   z: Zone
   current: ZoneStatut
   preset: ZoneStatut
+  decisions: DecisionZoneSA[]
   onSubmit: (statut: ZoneStatut, note: string) => void
   onClose: () => void
 }) {
   const [statut, setStatut] = useState<ZoneStatut>(preset)
   const [note, setNote] = useState('')
   const changed = statut !== current
-  const needsReason = statut === 'rejetee' && changed
-  const canSave = needsReason ? note.trim().length > 0 : changed || note.trim().length > 0
+  const needsReason = changed && !!decisions.find((d) => d.vers === statut)?.motif
+  const options = ZSTATUT_ORDER.filter((st) => st === current || decisions.some((d) => d.vers === st))
+  // Le backend enregistre une décision (changement de statut) avec son éventuel motif.
+  const canSave = needsReason ? note.trim().length > 0 : changed
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -653,7 +662,7 @@ function StatusForm({
     <ModalShell title={`Décision sur ${z.id}`} onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-3">
         <div role="radiogroup" aria-label="Statut" className="flex flex-col gap-2">
-          {ZSTATUT_ORDER.map((st) => {
+          {options.map((st) => {
             const m = ZSTATUT_META[st]
             const on = statut === st
             return (
@@ -674,7 +683,7 @@ function StatusForm({
           })}
         </div>
         <label className="block">
-          <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-faint">{needsReason ? 'Motif du rejet (obligatoire)' : 'Observation (facultatif)'}</span>
+          <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-faint">{needsReason ? 'Motif (obligatoire)' : 'Observation (facultatif)'}</span>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value.slice(0, 300))}
@@ -708,17 +717,23 @@ interface RowMenu {
   up: boolean
 }
 
-interface Override {
-  statut: ZoneStatut
-  extra: ZoneHistoryItem[]
-}
-
 const riskRank = (r: ZoneRisk) => RISK_ORDER.length - RISK_ORDER.indexOf(r)
 
 export function ZonesPage() {
   const { user } = useAuth()
-  const zones = INITIAL_ZONES
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Zones réelles, rechargées toutes les 30 s, avec les incidents et signalements qui les expliquent.
+  const { donnees, erreur, maj, recharger } = useEnDirect(chargerDonnees, 30_000)
+  const zones = useMemo(() => {
+    const [zs, incs, sigs] = donnees ?? [[], [], []]
+    definirEvenementsDesZones(
+      incs.map(incidentNationalDepuisApi).filter((i): i is Incident => i !== null),
+      sigs.map(signalementNationalDepuisApi).filter((x): x is Signalement => x !== null),
+    )
+    return zs.map(zoneNationaleDepuisApi)
+  }, [donnees])
+  const lastRefresh = formatNow(maj)
+  const [historiques, setHistoriques] = useState<Record<string, ZoneHistoryItem[]>>({})
+  const [recalcul, setRecalcul] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   const [region, setRegion] = useState<'toutes' | string>('toutes')
@@ -733,8 +748,7 @@ export function ZonesPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'risque', dir: 'desc' })
   const [page, setPage] = useState(1)
 
-  const [overrides, setOverrides] = useState<Record<string, Override>>({})
-  const [selectedId, setSelectedId] = useState<string | null>(() => [...zones].sort((a, b) => riskRank(b.risk) - riskRank(a.risk) || b.score - a.score)[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [popupId, setPopupId] = useState<string | null>(null)
   const [focus, setFocus] = useState<Focus>(NATIONAL_FOCUS)
@@ -744,9 +758,10 @@ export function ZonesPage() {
   const mapRef = useRef<HTMLElement | null>(null)
   const popupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const actor = user ? `Super Admin : ${user.firstName[0] ?? ''}. ${user.lastName}` : 'Super Admin'
+  const role = user?.role
+  const decisionsOf = (z: Zone): DecisionZoneSA[] => DECISIONS_ZONE[z.statut].filter((d) => role && (d.roles as string[]).includes(role))
 
-  const statutOf = (z: Zone): ZoneStatut => overrides[z.id]?.statut ?? z.statut
+  const statutOf = (z: Zone): ZoneStatut => z.statut
 
   const byId = useMemo(() => new Map(zones.map((z) => [z.id, z])), [zones])
 
@@ -795,19 +810,19 @@ export function ZonesPage() {
     let validees = 0
     let eleve = 0
     for (const z of scoped) {
-      const st = overrides[z.id]?.statut ?? z.statut
-      if (st === 'a_valider') aValider++
-      if (st === 'validee') validees++
+      const st = z.statut
+      if (ZSTATUTS_A_VALIDER.includes(st)) aValider++
+      if (st === 'reconnue') validees++
       if (z.risk === 'eleve' || z.risk === 'critique') eleve++
     }
     return { total: scoped.length, aValider, validees, eleve }
-  }, [scoped, overrides])
+  }, [scoped])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     const minIdent = identF === 'tous' ? 0 : SERIES_DAYS - IDENT_DAYS[identF]
     const rows = scoped.filter((z) => {
-      const st = overrides[z.id]?.statut ?? z.statut
+      const st = z.statut
       if (!risksOn.has(z.risk) || !statutsOn.has(st) || z.identDay < minIdent) return false
       if (!q) return true
       return z.id.toLowerCase().includes(q) || z.locality.toLowerCase().includes(q) || regionName(z.region).toLowerCase().includes(q) || RISK_META[z.risk].label.toLowerCase().includes(q)
@@ -821,7 +836,7 @@ export function ZonesPage() {
     }
     const dir = sort.dir === 'asc' ? 1 : -1
     return rows.sort((a, b) => dir * (value(a) - value(b)) || a.num - b.num)
-  }, [scoped, overrides, search, risksOn, statutsOn, identF, sort, counts])
+  }, [scoped, search, risksOn, statutsOn, identF, sort, counts])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -836,7 +851,28 @@ export function ZonesPage() {
   const menuZone = menu ? (byId.get(menu.id) ?? null) : null
   const modalZone = statusModal ? (byId.get(statusModal.id) ?? null) : null
 
-  const historyOf = (z: Zone): ZoneHistoryItem[] => [...zoneBaseHistory(z), ...(overrides[z.id]?.extra ?? [])]
+  const historyOf = (z: Zone): ZoneHistoryItem[] => [
+    { at: zoneDate(z.identDay), text: "Zone identifiée par l'analyse des incidents des boîtiers (recalcul des zones)." },
+    ...(historiques[z.id] ?? []),
+  ]
+
+  // Historique réel (décisions, rôles et motifs) de la zone ouverte.
+  const ouverte = selectedId ? (byId.get(selectedId) ?? null) : null
+  const ouverteNum = ouverte?.num ?? null
+  const ouverteId = ouverte?.id ?? null
+  const chargerHistorique = useCallback(async (num: number, id: string) => {
+    const lignes = await getHistoriqueZone(num).catch(() => [])
+    setHistoriques((prev) => ({
+      ...prev,
+      [id]: lignes.map((h) => ({
+        at: stamp(h.date),
+        text: `${h.statut_precedent_libelle} → ${h.statut_nouveau_libelle}${h.commentaire ? ` : « ${h.commentaire} »` : ''} (${h.acteur_nom ?? 'compte supprimé'})`,
+      })),
+    }))
+  }, [])
+  useEffect(() => {
+    if (ouverteNum !== null && ouverteId) void chargerHistorique(ouverteNum, ouverteId)
+  }, [ouverteNum, ouverteId, maj, chargerHistorique])
 
   /* --- Effets ----------------------------------------------------------- */
 
@@ -935,25 +971,40 @@ export function ZonesPage() {
   }
 
   const refresh = () => {
-    // TODO backend : recharger la liste, les compteurs et la carte
-    setLastRefresh(formatNow())
+    void recharger()
     setRefreshing(true)
     setToast('Données actualisées.')
   }
 
-  const saveStatus = (z: Zone, statut: ZoneStatut, note: string) => {
-    // TODO backend : PATCH du statut de la zone + motif / observation, journalisé dans l'historique
-    const current = overrides[z.id]?.statut ?? z.statut
-    const extra: ZoneHistoryItem[] = []
-    if (statut !== current) extra.push({ at: stampNow(), text: `Statut → ${ZSTATUT_META[statut].label} (${actor})` })
-    if (note) extra.push({ at: stampNow(), text: `${statut === 'rejetee' && statut !== current ? 'Motif' : 'Observation'} : « ${note} » (${actor})` })
-    setOverrides((prev) => ({ ...prev, [z.id]: { statut, extra: [...(prev[z.id]?.extra ?? []), ...extra] } }))
-    setStatusModal(null)
-    setToast(statut !== current ? `${z.id} : « ${ZSTATUT_META[statut].label} ».` : 'Observation ajoutée.')
+  /** Décision enregistrée par le backend (rôle, transition et motif vérifiés). */
+  const saveStatus = async (z: Zone, statut: ZoneStatut, note: string) => {
+    try {
+      await changerStatutZone(z.num, statut, note)
+      setStatusModal(null)
+      setToast(`${z.id} : « ${ZSTATUT_META[statut].label} ».`)
+      await recharger()
+      await chargerHistorique(z.num, z.id)
+    } catch (err) {
+      setToast(err instanceof ApiError ? err.message : 'Décision non enregistrée : serveur injoignable.')
+    }
+  }
+
+  /** Recalcul des zones à partir des incidents des boîtiers (super admin) ; les statuts sont conservés. */
+  const recalculer = async () => {
+    setRecalcul(true)
+    try {
+      const res = await genererZones()
+      setToast(`${res.incidents_traites} incidents analysés : ${res.zones_creees} zone(s) créée(s), ${res.zones_mises_a_jour} mise(s) à jour.`)
+      await recharger()
+    } catch (err) {
+      setToast(err instanceof ApiError ? err.message : 'Recalcul impossible : serveur injoignable.')
+    } finally {
+      setRecalcul(false)
+    }
   }
 
   /** Les cartes de synthèse servent aussi de raccourcis de filtre. */
-  const applyKpi = (key: 'total' | 'a_valider' | 'validee' | 'eleve') => {
+  const applyKpi = (key: 'total' | 'a_valider' | 'reconnue' | 'eleve') => {
     if (key === 'total') {
       setStatutsOn(new Set(ZSTATUT_ORDER))
       setRisksOn(new Set(RISK_ORDER))
@@ -961,7 +1012,7 @@ export function ZonesPage() {
       setStatutsOn(new Set(ZSTATUT_ORDER))
       setRisksOn(new Set<ZoneRisk>(['critique', 'eleve']))
     } else {
-      setStatutsOn(new Set<ZoneStatut>([key]))
+      setStatutsOn(new Set<ZoneStatut>(key === 'a_valider' ? ZSTATUTS_A_VALIDER : [key]))
       setRisksOn(new Set(RISK_ORDER))
     }
   }
@@ -1007,8 +1058,8 @@ export function ZonesPage() {
 
   const kpiCards = [
     { key: 'total' as const, icon: 'location_on', tint: '#2b6cb0', soft: '#e8f0f9', label: 'Zones identifiées', value: kpis.total, sub: 'Zones détectées', active: allStatuts && allRisks },
-    { key: 'a_valider' as const, icon: 'schedule', tint: '#e8940c', soft: '#fdf4e6', label: 'Zones à valider', value: kpis.aValider, sub: 'En attente de décision', active: statutsOn.size === 1 && statutsOn.has('a_valider') && allRisks },
-    { key: 'validee' as const, icon: 'check_circle', tint: '#1f9d55', soft: '#e9f6ee', label: 'Zones validées', value: kpis.validees, sub: 'Zones officiellement retenues', active: statutsOn.size === 1 && statutsOn.has('validee') && allRisks },
+    { key: 'a_valider' as const, icon: 'schedule', tint: '#e8940c', soft: '#fdf4e6', label: 'Zones à valider', value: kpis.aValider, sub: 'En attente de décision technique', active: statutsOn.size === ZSTATUTS_A_VALIDER.length && ZSTATUTS_A_VALIDER.every((st) => statutsOn.has(st)) && allRisks },
+    { key: 'reconnue' as const, icon: 'check_circle', tint: '#1f9d55', soft: '#e9f6ee', label: 'Zones validées', value: kpis.validees, sub: "Reconnues officiellement par l'ANASER", active: statutsOn.size === 1 && statutsOn.has('reconnue') && allRisks },
     { key: 'eleve' as const, icon: 'warning', tint: '#dc3a2f', soft: '#fdeeec', label: 'Zones à risque élevé', value: kpis.eleve, sub: 'Niveau de risque élevé ou critique', active: isHigh && allStatuts },
   ]
 
@@ -1035,6 +1086,7 @@ export function ZonesPage() {
     onMenu: (e) => openMenu(e, z.id),
     onAction: (preset) => setStatusModal({ id: z.id, preset }),
     onLocate: () => locate(z, true),
+    decisions: decisionsOf(z),
   })
 
   const sortHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'left') => (
@@ -1093,6 +1145,12 @@ export function ZonesPage() {
                 </select>
               </span>
             </label>
+            {role === 'super_admin' && (
+              <button type="button" onClick={() => void recalculer()} disabled={recalcul} className={`${headBtn} disabled:cursor-not-allowed disabled:opacity-50`}>
+                <span className={`ic text-xl text-info-600 ${recalcul ? 'animate-spin' : ''}`}>autorenew</span>
+                Recalculer les zones
+              </button>
+            )}
             <button type="button" onClick={refresh} className={headBtn}>
               <span className={`ic text-xl text-info-600 ${refreshing ? 'animate-spin' : ''}`}>refresh</span>
               Actualiser
@@ -1125,6 +1183,7 @@ export function ZonesPage() {
             </div>
           )}
           <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh}</p>
+          {erreur && <p className="m-0 text-[10.5px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
 
@@ -1506,10 +1565,7 @@ export function ZonesPage() {
         >
           {[
             { icon: 'visibility', label: 'Voir le détail', run: () => openDetail(menuZone.id), show: true },
-            { icon: 'check_circle', label: 'Valider', run: () => setStatusModal({ id: menuZone.id, preset: 'validee' }), show: statutOf(menuZone) === 'a_valider' || statutOf(menuZone) === 'a_analyser' },
-            { icon: 'cancel', label: 'Rejeter', run: () => setStatusModal({ id: menuZone.id, preset: 'rejetee' }), show: statutOf(menuZone) === 'a_valider' || statutOf(menuZone) === 'a_analyser' },
-            { icon: 'troubleshoot', label: 'Renvoyer en analyse', run: () => setStatusModal({ id: menuZone.id, preset: 'a_analyser' }), show: statutOf(menuZone) === 'a_valider' },
-            { icon: 'edit_note', label: 'Modifier le statut', run: () => setStatusModal({ id: menuZone.id, preset: statutOf(menuZone) }), show: statutOf(menuZone) === 'validee' || statutOf(menuZone) === 'rejetee' },
+            ...decisionsOf(menuZone).map((dz) => ({ icon: dz.icon, label: dz.libelle, run: () => setStatusModal({ id: menuZone.id, preset: dz.vers }), show: true })),
             { icon: 'my_location', label: 'Voir sur la carte', run: () => locate(menuZone, true), show: true },
             { icon: 'content_copy', label: 'Copier la référence', run: () => copy('Référence', menuZone.id), show: true },
           ]
@@ -1533,7 +1589,7 @@ export function ZonesPage() {
       )}
 
       {modalZone && statusModal && (
-        <StatusForm key={modalZone.id + statusModal.preset} z={modalZone} current={statutOf(modalZone)} preset={statusModal.preset} onSubmit={(st, note) => saveStatus(modalZone, st, note)} onClose={() => setStatusModal(null)} />
+        <StatusForm key={modalZone.id + statusModal.preset} z={modalZone} current={statutOf(modalZone)} preset={statusModal.preset} decisions={decisionsOf(modalZone)} onSubmit={(st, note) => void saveStatus(modalZone, st, note)} onClose={() => setStatusModal(null)} />
       )}
 
       {toast && (
