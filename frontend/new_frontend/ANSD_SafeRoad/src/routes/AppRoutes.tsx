@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { AnaserLayout } from '@/components/layout/AnaserLayout'
 import { ClientLayout } from '@/components/layout/ClientLayout'
-import { PageStub } from '@/components/layout/PageStub'
 import { SiteLayout } from '@/components/layout/SiteLayout'
 import { SuperAdminLayout } from '@/components/layout/SuperAdminLayout'
 import { AlertesPage as AdminAlertesPage } from '@/pages/admin/AlertesPage'
@@ -19,6 +18,10 @@ import { ZonesPage as SuperAdminZonesPage } from '@/pages/superadmin/ZonesPage'
 import { DemandesPage } from '@/pages/admin/DemandesPage'
 import { MessagesPage } from '@/pages/superadmin/MessagesPage'
 import { StatistiquesPage } from '@/pages/superadmin/StatistiquesPage'
+import { NotificationsPage } from '@/pages/superadmin/NotificationsPage'
+import { RapportsPage } from '@/pages/superadmin/RapportsPage'
+import { ConfigurationPage } from '@/pages/superadmin/ConfigurationPage'
+import { HistoriquePage as SuperAdminHistoriquePage } from '@/pages/superadmin/HistoriquePage'
 import { DashboardPage as AnaserDashboardPage } from '@/pages/anaser/DashboardPage'
 import { ProfilPage as AnaserProfilPage } from '@/pages/anaser/ProfilPage'
 import { RetoursPage as AnaserRetoursPage } from '@/pages/anaser/RetoursPage'
@@ -110,7 +113,7 @@ export function AppRoutes() {
           />
           <Route
             path={PATHS.anaser.statistiques}
-            element={<PageStub title="Statistiques" description="Statistiques nationales de sécurité routière." />}
+            element={<StatistiquesPage />}
           />
           <Route path={PATHS.anaser.retours} element={<AnaserRetoursPage />} />
           <Route path={PATHS.anaser.profil} element={<AnaserProfilPage />} />
@@ -131,10 +134,10 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.messages} element={<MessagesPage />} />
           <Route path={PATHS.superAdmin.profil} element={<AnaserProfilPage />} />
           <Route path={PATHS.superAdmin.statistiques} element={<StatistiquesPage />} />
-          <Route path={PATHS.superAdmin.notifications} element={<PageStub title="Notifications" />} />
-          <Route path={PATHS.superAdmin.rapports} element={<PageStub title="Rapports" />} />
-          <Route path={PATHS.superAdmin.configuration} element={<PageStub title="Configuration" />} />
-          <Route path={PATHS.superAdmin.historique} element={<PageStub title="Historique" />} />
+          <Route path={PATHS.superAdmin.notifications} element={<NotificationsPage />} />
+          <Route path={PATHS.superAdmin.rapports} element={<RapportsPage />} />
+          <Route path={PATHS.superAdmin.configuration} element={<ConfigurationPage />} />
+          <Route path={PATHS.superAdmin.historique} element={<SuperAdminHistoriquePage />} />
         </Route>
       </Route>
 

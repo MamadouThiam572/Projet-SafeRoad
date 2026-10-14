@@ -869,6 +869,78 @@ export function getStatistiquesDetaillees(jours: number, region?: string, zone?:
 }
 
 // ---------------------------------------------------------------------------
+// Super admin : notifications, configuration nationale, journal d'activité.
+// ---------------------------------------------------------------------------
+
+export interface NotificationApi {
+  id: number
+  type_notification: string
+  type_notification_libelle: string
+  message: string
+  lue: boolean
+  incident: number | null
+  zone: number | null
+  boitier: string | null
+  signalement: number | null
+  date_creation: string
+}
+
+export function getNotifications(): Promise<NotificationApi[]> {
+  return authorizedFetch('/notifications/')
+}
+
+export function marquerNotificationLue(id: number): Promise<NotificationApi> {
+  return authorizedFetch(`/notifications/${id}/lue/`, { method: 'PATCH' })
+}
+
+export function marquerToutesNotificationsLues(): Promise<{ detail: string }> {
+  return authorizedFetch('/notifications/tout-lire/', { method: 'POST' })
+}
+
+export interface ConfigurationApi {
+  rayon_clustering_metres: number
+  min_incidents_pour_zone: number
+  rayon_alerte_proximite_metres: number
+  intervalle_sync_secondes: number
+  cooldown_alerte_proximite_minutes: number
+  duree_grace_regeneration_cle_heures: number
+  gps_satellites_min: number
+  gps_hdop_max: number
+  poids_signalement_valide: number
+  delai_hors_ligne_minutes: number
+  date_maj: string
+  modifie_par_nom: string | null
+}
+
+export function getConfiguration(): Promise<ConfigurationApi> {
+  return authorizedFetch('/configuration/')
+}
+
+export function modifierConfiguration(donnees: Partial<ConfigurationApi>): Promise<ConfigurationApi> {
+  return authorizedFetch('/configuration/', { method: 'PUT', body: JSON.stringify(donnees) })
+}
+
+export interface LigneJournalApi {
+  categorie: 'zone' | 'signalement' | 'incident' | 'boitier' | 'demande'
+  date: string
+  objet: string
+  region: string | null
+  region_libelle: string | null
+  action: string
+  commentaire: string
+  acteur: string
+  role: string
+}
+
+export function getJournalActivite(jours: number, categorie = '', region = '', q = ''): Promise<{ jours: number; total: number; lignes: LigneJournalApi[] }> {
+  const params = new URLSearchParams({ jours: String(jours) })
+  if (categorie) params.set('categorie', categorie)
+  if (region) params.set('region', region)
+  if (q) params.set('q', q)
+  return authorizedFetch(`/journal-activite/?${params}`)
+}
+
+// ---------------------------------------------------------------------------
 // Tableaux de bord (GET /tableau-de-bord/) : chiffres calculés en direct par le backend, selon
 // le rôle (admin régional = sa région ; super admin et ANASER = national + détail par région).
 // ---------------------------------------------------------------------------
