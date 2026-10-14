@@ -29,9 +29,9 @@ interface SidebarProps {
 export function Sidebar({ navItems, homeTo, roleLabel, roleMeta, cta, mobileOpen, onCloseMobile }: SidebarProps) {
   // Le tiroir mobile s'ouvre en pleine largeur : les libellés doivent y être
   // visibles, contrairement au mode "rail" du desktop entre 768 et 1280px.
-  const label = mobileOpen ? 'inline' : 'hidden xl:inline'
-  const labelFlex = mobileOpen ? 'flex' : 'hidden xl:flex'
-  const labelBadge = mobileOpen ? 'flex' : 'hidden xl:flex'
+  const label = mobileOpen ? 'inline' : 'hidden lg:inline'
+  const labelFlex = mobileOpen ? 'flex' : 'hidden lg:flex'
+  const labelBadge = mobileOpen ? 'flex' : 'hidden lg:flex'
 
   return (
     <>
@@ -45,7 +45,7 @@ export function Sidebar({ navItems, homeTo, roleLabel, roleMeta, cta, mobileOpen
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col overflow-hidden bg-sidebar p-4 transition-transform duration-200 md:sticky md:top-0 md:z-0 md:h-screen md:w-20 md:translate-x-0 xl:w-60 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col overflow-hidden bg-sidebar p-4 transition-transform duration-200 md:sticky md:top-0 md:z-0 md:h-screen md:w-20 md:translate-x-0 lg:w-60 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -67,7 +67,7 @@ export function Sidebar({ navItems, homeTo, roleLabel, roleMeta, cta, mobileOpen
             </div>
           </div>
 
-          <nav className="mt-6 flex min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin] xl:mt-5">
+          <nav className="mt-6 flex min-h-0 flex-col gap-1 overflow-y-auto [scrollbar-width:thin] lg:mt-5">
             {navItems.map((item) => (
               <NavLink
                 key={item.key}
@@ -100,7 +100,7 @@ export function Sidebar({ navItems, homeTo, roleLabel, roleMeta, cta, mobileOpen
               type="button"
               onClick={cta.onClick}
               className={`flex min-h-[46px] items-center gap-3 rounded-2xl bg-danger-600 p-3.5 transition-colors hover:bg-danger-700 ${
-                mobileOpen ? 'justify-start' : 'justify-center xl:justify-start'
+                mobileOpen ? 'justify-start' : 'justify-center lg:justify-start'
               }`}
             >
               <span className="ic flex-none text-[21px] text-white">{cta.icon}</span>
