@@ -49,21 +49,21 @@ export function Sidebar({ navItems, homeTo, roleLabel, roleMeta, cta, mobileOpen
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[.06] via-transparent to-transparent" />
 
         <div className="relative flex h-full flex-col">
           <NavLink to={homeTo} className="flex items-center gap-3 px-1.5">
             <span className="flex h-[42px] w-[42px] flex-none items-center justify-center overflow-hidden rounded-xl bg-navy-900">
               <img src={logoUrl} alt="SafeRoad" className="h-full w-full object-contain" />
             </span>
-            <span className={`${label} text-xl font-extrabold tracking-tight text-ink`}>SafeRoad</span>
+            <span className={`${label} text-xl font-extrabold tracking-tight text-white`}>SafeRoad</span>
           </NavLink>
 
           <div className={`mt-6 items-center gap-3 rounded-xl px-2 py-3 ${labelFlex}`}>
-            <span className="ic flex-none text-xl text-brand-600">account_circle</span>
+            <span className="ic flex-none text-xl text-brand-400">account_circle</span>
             <div className="min-w-0">
-              <p className="m-0 text-[13.5px] font-bold leading-tight text-ink">{roleLabel}</p>
-              {roleMeta && <p className="m-0 mt-1 text-[11.5px] font-medium leading-none text-ink/60">{roleMeta}</p>}
+              <p className="m-0 text-[13.5px] font-bold leading-tight text-white">{roleLabel}</p>
+              {roleMeta && <p className="m-0 mt-1 text-[11.5px] font-medium leading-none text-white/60">{roleMeta}</p>}
             </div>
           </div>
 
@@ -76,7 +76,7 @@ export function Sidebar({ navItems, homeTo, roleLabel, roleMeta, cta, mobileOpen
                 onClick={onCloseMobile}
                 className={({ isActive }) =>
                   `flex min-h-[46px] items-center gap-3 rounded-[11px] px-3 py-3 [@media(max-height:760px)]:min-h-[40px] [@media(max-height:760px)]:py-2 text-[13.5px] font-semibold transition-colors ${
-                    isActive ? 'bg-brand-600 text-white' : 'text-ink/75 hover:bg-white/55 hover:text-ink'
+                    isActive ? 'bg-brand-600 text-white' : 'text-white/75 hover:bg-white/10 hover:text-white'
                   }`
                 }
               >
