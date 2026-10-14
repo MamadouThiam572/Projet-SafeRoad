@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { ACTION_PREVUE_LABEL, ANASER_RETOURS, STATUT_RETOUR_META } from '@/data/anaserRetours'
+import { ACTION_PREVUE_LABEL, chargerRetours, STATUT_RETOUR_META } from '@/data/anaserRetours'
 import { useEnDirect } from '@/hooks/useEnDirect'
 import { getTableauDeBord, type TableauDeBordApi } from '@/lib/api'
 import { PATHS } from '@/routes/paths'
@@ -9,14 +9,13 @@ import { PATHS } from '@/routes/paths'
 /** Chiffres nationaux des 30 derniers jours (GET /tableau-de-bord/, vue nationale pour l'ANASER). */
 const chargerNational = () => getTableauDeBord(30)
 
-function indicateursNationaux(api: TableauDeBordApi | null) {
+function indicateursNationaux(api: TableauDeBordApi | null, nbRetours: number) {
   const ind = api?.indicateurs
   return [
     { key: 'incidents', icon: 'report', label: 'Incidents (30 jours)', value: ind?.incidents.periode ?? 0, tint: '#dc3a2f', soft: '#fdeeec' },
     { key: 'a-reconnaitre', icon: 'pending_actions', label: 'Zones à reconnaître', value: ind?.zones.soumises_anaser ?? 0, tint: '#7c3aed', soft: '#f1eafe' },
     { key: 'zones', icon: 'crisis_alert', label: 'Zones reconnues', value: ind?.zones.reconnues ?? 0, tint: '#e8940c', soft: '#fdf4e6' },
-    // Les retours restent locaux tant que la page Retours n'est pas reliée au backend.
-    { key: 'retours', icon: 'campaign', label: 'Retours ANASER', value: ANASER_RETOURS.length, tint: '#2b6cb0', soft: '#e8f1fb' },
+    { key: 'retours', icon: 'campaign', label: 'Retours ANASER', value: nbRetours, tint: '#2b6cb0', soft: '#e8f1fb' },
   ]
 }
 
@@ -34,9 +33,10 @@ function firstName(fullName: string): string {
 export function DashboardPage() {
   const { user } = useAuth()
 
-  const recentRetours = useMemo(() => ANASER_RETOURS.slice(0, 3), [])
+  const { donnees: retours } = useEnDirect(chargerRetours, 60_000)
+  const recentRetours = useMemo(() => (retours ?? []).slice(0, 3), [retours])
   const { donnees, erreur } = useEnDirect(chargerNational, 30_000)
-  const NATIONAL_KPIS = useMemo(() => indicateursNationaux(donnees), [donnees])
+  const NATIONAL_KPIS = useMemo(() => indicateursNationaux(donnees, retours?.length ?? 0), [donnees, retours])
 
   return (
     <div>

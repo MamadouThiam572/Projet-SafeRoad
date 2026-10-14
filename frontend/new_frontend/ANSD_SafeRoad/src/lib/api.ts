@@ -1018,40 +1018,49 @@ export function getTableauDeBordConducteur(jours = 30): Promise<TableauDeBordCon
 // le même schéma REST que le reste de l'API (apps/incidents, apps/zones).
 // ---------------------------------------------------------------------------
 
-export type ActionPrevueApi = 'signalisation' | 'ralentisseur' | 'eclairage' | 'autre'
-export type StatutRetourApi = 'nouveau' | 'en_cours' | 'traite'
+export type ActionPrevueApi = 'aucune' | 'signalisation' | 'ralentisseur' | 'eclairage' | 'autre'
+export type StatutRetourApi = 'soumise' | 'en_cours' | 'realisee'
 
-export interface AlerteAnaserPayload {
-  cibleType: 'zone' | 'incident'
-  cibleLabel: string
-  actionPrevue: ActionPrevueApi
+export interface AlerteAnaser {
+  id: number
+  zone: number | null
+  incident: number | null
+  auteur: string | number
+  auteur_nom: string
+  cible_libelle: string
   commentaire: string
+  action_prevue: ActionPrevueApi
+  action_prevue_libelle: string
+  details_action: string
+  statut: StatutRetourApi
+  statut_libelle: string
+  date_creation: string
+  date_maj: string
 }
 
-export interface AlerteAnaser extends AlerteAnaserPayload {
-  id: string
-  statut: StatutRetourApi
-  createdAt: string
+export interface AlerteAnaserPayload {
+  zone?: number | null
+  incident?: number | null
+  action_prevue: ActionPrevueApi
+  commentaire: string
+  details_action?: string
 }
 
 export function getAlertesAnaser(): Promise<AlerteAnaser[]> {
   return authorizedFetch<AlerteAnaser[]>('/alertes-anaser/')
 }
 
+/** Création réservée au rôle ANASER ; une zone ou un incident est obligatoire. */
 export function createAlerteAnaser(payload: AlerteAnaserPayload): Promise<AlerteAnaser> {
-  return authorizedFetch<AlerteAnaser>('/alertes-anaser/', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
+  return authorizedFetch<AlerteAnaser>('/alertes-anaser/', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export function updateAlerteAnaser(id: string, payload: Partial<AlerteAnaserPayload>): Promise<AlerteAnaser> {
-  return authorizedFetch<AlerteAnaser>(`/alertes-anaser/${id}/`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  })
+/** Modification (dont l'avancement du statut) : seul l'auteur du retour. */
+export function updateAlerteAnaser(id: number, payload: Partial<AlerteAnaserPayload & { statut: StatutRetourApi }>): Promise<AlerteAnaser> {
+  return authorizedFetch<AlerteAnaser>(`/alertes-anaser/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) })
 }
 
-export function deleteAlerteAnaser(id: string): Promise<null> {
+/** Suppression : l'auteur, ou le super admin (modération). */
+export function deleteAlerteAnaser(id: number): Promise<null> {
   return authorizedFetch<null>(`/alertes-anaser/${id}/`, { method: 'DELETE' })
 }

@@ -1,4 +1,6 @@
-export type ActionPrevue = 'signalisation' | 'ralentisseur' | 'eclairage' | 'autre'
+import { getAlertesAnaser, type AlerteAnaser, type StatutRetourApi } from '@/lib/api'
+
+export type ActionPrevue = 'signalisation' | 'ralentisseur' | 'eclairage' | 'autre' | 'aucune'
 export type StatutRetour = 'nouveau' | 'en_cours' | 'traite'
 export type CibleType = 'zone' | 'incident'
 
@@ -10,6 +12,10 @@ export interface RetourAnaser {
   commentaire: string
   statut: StatutRetour
   createdAt: string
+  /** Données réelles : identifiant backend, auteur (seul à pouvoir faire avancer le statut). */
+  apiId?: number
+  auteurId?: string
+  auteurNom?: string
 }
 
 export const ACTION_PREVUE_LABEL: Record<ActionPrevue, string> = {
@@ -17,6 +23,7 @@ export const ACTION_PREVUE_LABEL: Record<ActionPrevue, string> = {
   ralentisseur: 'Ralentisseur nécessaire',
   eclairage: 'Éclairage insuffisant',
   autre: 'Autre action',
+  aucune: 'Aucune action (information)',
 }
 
 export const STATUT_RETOUR_META: Record<StatutRetour, { label: string; color: string; soft: string; text: string }> = {
@@ -25,38 +32,24 @@ export const STATUT_RETOUR_META: Record<StatutRetour, { label: string; color: st
   traite: { label: 'Traité', color: '#1f9d55', soft: '#e9f6ee', text: '#1f9d55' },
 }
 
-/**
- * Retours officiels ANASER (modèle AlerteAnaser côté backend — apps/anaser).
- * Mock local en attendant le branchement sur getAlertesAnaser / createAlerteAnaser
- * / updateAlerteAnaser / deleteAlerteAnaser (src/lib/api.ts) une fois l'endpoint
- * POST/GET/PUT/PATCH/DELETE /api/v1/alertes-anaser/ accessible depuis le frontend.
- */
-export const ANASER_RETOURS: RetourAnaser[] = [
-  {
-    id: 'SR-001',
-    cibleType: 'zone',
-    cibleLabel: 'RN1 — Km 45 (Dakar)',
-    actionPrevue: 'signalisation',
-    commentaire: "Signalisation manquante à l'approche du carrefour.",
-    statut: 'en_cours',
-    createdAt: '09/09/2026',
-  },
-  {
-    id: 'SR-002',
-    cibleType: 'zone',
-    cibleLabel: 'RN2 — Km 32 (Thiès)',
-    actionPrevue: 'eclairage',
-    commentaire: 'Éclairage public insuffisant sur ce tronçon la nuit.',
-    statut: 'traite',
-    createdAt: '08/09/2026',
-  },
-  {
-    id: 'SR-003',
-    cibleType: 'zone',
-    cibleLabel: 'A1 (Dakar)',
-    actionPrevue: 'ralentisseur',
-    commentaire: 'Vitesses excessives constatées à répétition, ralentisseur recommandé.',
-    statut: 'traite',
-    createdAt: '06/09/2026',
-  },
-]
+const STATUT_DEPUIS_API: Record<StatutRetourApi, StatutRetour> = { soumise: 'nouveau', en_cours: 'en_cours', realisee: 'traite' }
+export const STATUT_VERS_API: Record<StatutRetour, StatutRetourApi> = { nouveau: 'soumise', en_cours: 'en_cours', traite: 'realisee' }
+
+/** Retour du backend (AlerteAnaser) -> carte de la page, même forme que la démonstration. */
+export function retourDepuisApi(a: AlerteAnaser): RetourAnaser {
+  return {
+    id: `SR-${String(a.id).padStart(3, '0')}`,
+    apiId: a.id,
+    cibleType: a.zone ? 'zone' : 'incident',
+    cibleLabel: a.cible_libelle,
+    actionPrevue: a.action_prevue,
+    commentaire: a.commentaire,
+    statut: STATUT_DEPUIS_API[a.statut],
+    createdAt: new Date(a.date_creation).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    auteurId: String(a.auteur),
+    auteurNom: a.auteur_nom,
+  }
+}
+
+/** Retours officiels réels (chargement partagé : page Retours, tableau de bord, menu). */
+export const chargerRetours = () => getAlertesAnaser().then((liste) => liste.map(retourDepuisApi))

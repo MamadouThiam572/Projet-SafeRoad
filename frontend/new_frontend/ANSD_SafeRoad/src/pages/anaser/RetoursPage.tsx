@@ -1,13 +1,20 @@
 import { useMemo, useState, type FormEvent } from 'react'
+import { useAuth } from '@/context/AuthContext'
 import {
   ACTION_PREVUE_LABEL,
-  ANASER_RETOURS,
+  retourDepuisApi,
   STATUT_RETOUR_META,
+  STATUT_VERS_API,
   type ActionPrevue,
   type CibleType,
   type RetourAnaser,
   type StatutRetour,
 } from '@/data/anaserRetours'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { ApiError, createAlerteAnaser, deleteAlerteAnaser, getAlertesAnaser, getIncidentsRecents, getZones, updateAlerteAnaser } from '@/lib/api'
+
+/** Retours réels + zones et incidents récents qu'un retour peut viser. */
+const chargerPage = () => Promise.all([getAlertesAnaser(), getZones(), getIncidentsRecents()])
 
 type StatutTabKey = 'toutes' | StatutRetour
 
@@ -18,11 +25,7 @@ const TABS: { key: StatutTabKey; label: string }[] = [
   { key: 'traite', label: 'Traités' },
 ]
 
-const ACTION_OPTIONS: ActionPrevue[] = ['signalisation', 'ralentisseur', 'eclairage', 'autre']
-
-function todayLabel(): string {
-  return new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
+const ACTION_OPTIONS: ActionPrevue[] = ['signalisation', 'ralentisseur', 'eclairage', 'autre', 'aucune']
 
 function emptyForm() {
   return {
@@ -33,8 +36,20 @@ function emptyForm() {
   }
 }
 
+/** Statut suivant d'un retour, que seul son auteur peut faire avancer. */
+const SUIVANT: Partial<Record<StatutRetour, { vers: StatutRetour; label: string }>> = {
+  nouveau: { vers: 'en_cours', label: 'Passer en cours' },
+  en_cours: { vers: 'traite', label: 'Marquer traité' },
+}
+
 export function RetoursPage() {
-  const [retours, setRetours] = useState<RetourAnaser[]>(ANASER_RETOURS)
+  const { user } = useAuth()
+  const { donnees, erreur, recharger } = useEnDirect(chargerPage, 30_000)
+  const retours = useMemo<RetourAnaser[]>(() => (donnees?.[0] ?? []).map(retourDepuisApi), [donnees])
+  const zones = donnees?.[1] ?? []
+  const incidents = donnees?.[2] ?? []
+  const [message, setMessage] = useState('')
+  const [envoi, setEnvoi] = useState(false)
   const [tab, setTab] = useState<StatutTabKey>('toutes')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyForm())
@@ -50,30 +65,47 @@ export function RetoursPage() {
     traite: retours.filter((r) => r.statut === 'traite').length,
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!form.cibleLabel.trim() || !form.commentaire.trim()) return
-
-    const nextId = `SR-${String(retours.length + 1).padStart(3, '0')}`
-    const nouveau: RetourAnaser = {
-      id: nextId,
-      cibleType: form.cibleType,
-      cibleLabel: form.cibleLabel.trim(),
-      actionPrevue: form.actionPrevue,
-      commentaire: form.commentaire.trim(),
-      statut: 'nouveau',
-      createdAt: todayLabel(),
+  /** Appel au backend, rechargement, message (succès ou refus du serveur). */
+  async function executer(appel: () => Promise<unknown>, succes: string) {
+    setEnvoi(true)
+    try {
+      await appel()
+      setMessage(succes)
+      await recharger()
+      return true
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'Action impossible : serveur injoignable.')
+      return false
+    } finally {
+      setEnvoi(false)
     }
-
-    // TODO backend : remplacer par createAlerteAnaser(nouveau) — voir src/lib/api.ts
-    setRetours((prev) => [nouveau, ...prev])
-    setForm(emptyForm())
-    setShowForm(false)
   }
 
-  function handleDelete(id: string) {
-    // TODO backend : appeler deleteAlerteAnaser(id) — voir src/lib/api.ts
-    setRetours((prev) => prev.filter((r) => r.id !== id))
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!form.cibleLabel || !form.commentaire.trim()) return
+    const cible = Number(form.cibleLabel)
+    const ok = await executer(
+      () =>
+        createAlerteAnaser({
+          ...(form.cibleType === 'zone' ? { zone: cible } : { incident: cible }),
+          action_prevue: form.actionPrevue,
+          commentaire: form.commentaire.trim(),
+        }),
+      'Retour officiel envoyé.',
+    )
+    if (ok) {
+      setForm(emptyForm())
+      setShowForm(false)
+    }
+  }
+
+  function handleDelete(retour: RetourAnaser) {
+    if (retour.apiId) void executer(() => deleteAlerteAnaser(retour.apiId!), 'Retour supprimé.')
+  }
+
+  function handleAvancer(retour: RetourAnaser, vers: StatutRetour) {
+    if (retour.apiId) void executer(() => updateAlerteAnaser(retour.apiId!, { statut: STATUT_VERS_API[vers] }), 'Statut mis à jour.')
   }
 
   return (
@@ -86,6 +118,7 @@ export function RetoursPage() {
           <p className="mt-2.5 text-sm leading-6 text-body">
             Vos retours officiels sur les zones à risque et incidents — vue nationale.
           </p>
+          {(message || erreur) && <p className="mt-1.5 text-xs font-semibold text-body">{message || erreur}</p>}
         </div>
         <div className="flex flex-none flex-wrap items-center gap-2.5">
           <span className="rounded-xl border border-line bg-white px-3.5 py-2.5 text-[12px] font-bold text-danger-700">
@@ -111,7 +144,7 @@ export function RetoursPage() {
       {showForm && (
         <section className="mx-6 mt-4">
           <form
-            onSubmit={handleSubmit}
+            onSubmit={(e) => void handleSubmit(e)}
             className="flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-card"
           >
             <p className="m-0 text-sm font-extrabold text-ink">Nouveau retour officiel</p>
@@ -121,7 +154,7 @@ export function RetoursPage() {
                 Concerne
                 <select
                   value={form.cibleType}
-                  onChange={(e) => setForm((f) => ({ ...f, cibleType: e.target.value as CibleType }))}
+                  onChange={(e) => setForm((f) => ({ ...f, cibleType: e.target.value as CibleType, cibleLabel: '' }))}
                   className="rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink"
                 >
                   <option value="zone">Une zone à risque</option>
@@ -147,13 +180,26 @@ export function RetoursPage() {
 
             <label className="flex flex-col gap-1.5 text-[12.5px] font-bold text-body">
               Localisation (zone ou incident concerné)
-              <input
+              <select
                 value={form.cibleLabel}
                 onChange={(e) => setForm((f) => ({ ...f, cibleLabel: e.target.value }))}
-                placeholder="Ex : RN1 — Km 45 (Dakar)"
                 className="rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink"
                 required
-              />
+              >
+                <option value="">{form.cibleType === 'zone' ? 'Choisir une zone à risque…' : 'Choisir un incident récent…'}</option>
+                {form.cibleType === 'zone'
+                  ? zones.map((z) => (
+                      <option key={z.id} value={z.id}>
+                        {z.nom || `Zone #${z.id}`}
+                        {z.region_libelle ? ` (${z.region_libelle})` : ''} — {z.statut_validation_libelle}
+                      </option>
+                    ))
+                  : incidents.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        Incident #{i.id} — {i.type_incident_libelle} — {new Date(i.horodatage).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                      </option>
+                    ))}
+              </select>
             </label>
 
             <label className="flex flex-col gap-1.5 text-[12.5px] font-bold text-body">
@@ -178,7 +224,8 @@ export function RetoursPage() {
               </button>
               <button
                 type="submit"
-                className="rounded-full bg-brand-600 px-5 py-2.5 text-[12.5px] font-bold text-white hover:bg-brand-700"
+                disabled={envoi}
+                className="rounded-full bg-brand-600 px-5 py-2.5 text-[12.5px] font-bold text-white hover:bg-brand-700 disabled:opacity-50"
               >
                 Envoyer le retour
               </button>
@@ -241,6 +288,12 @@ export function RetoursPage() {
                     <span className="ic text-[15px]">schedule</span>
                     {retour.createdAt}
                   </span>
+                  {retour.auteurNom && (
+                    <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-muted">
+                      <span className="ic text-[15px]">person</span>
+                      {retour.auteurNom}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -251,9 +304,21 @@ export function RetoursPage() {
                 {status.label}
               </span>
 
+              {retour.auteurId === user?.id && SUIVANT[retour.statut] && (
+                <button
+                  type="button"
+                  disabled={envoi}
+                  onClick={() => handleAvancer(retour, SUIVANT[retour.statut]!.vers)}
+                  className="flex-none rounded-full border border-line px-3 py-2 text-[11px] font-bold text-brand-600 hover:bg-brand-50"
+                >
+                  {SUIVANT[retour.statut]!.label}
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => handleDelete(retour.id)}
+                disabled={envoi}
+                onClick={() => handleDelete(retour)}
                 className="flex-none rounded-full border border-line px-3 py-2 text-[11px] font-bold text-danger-700 hover:bg-danger-50"
               >
                 Supprimer
@@ -265,7 +330,7 @@ export function RetoursPage() {
         {filtered.length === 0 && (
           <div className="rounded-2xl border border-line bg-white px-5 py-14 text-center shadow-card">
             <span className="ic text-4xl text-icon-muted">campaign</span>
-            <p className="mt-3.5 text-[15px] font-extrabold text-ink">Aucun retour dans cette catégorie</p>
+            <p className="mt-3.5 text-[15px] font-extrabold text-ink">{donnees ? 'Aucun retour dans cette catégorie' : 'Chargement…'}</p>
             <p className="mt-1.5 text-sm leading-6 text-body">Utilisez « Soumettre un retour » pour en créer un.</p>
           </div>
         )}

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { ANASER_RETOURS } from '@/data/anaserRetours'
+import { chargerRetours } from '@/data/anaserRetours'
+import { useEnDirect } from '@/hooks/useEnDirect'
 import { PATHS } from '@/routes/paths'
 import { DashboardLayout } from './DashboardLayout'
 import type { SidebarNavItem } from './Sidebar'
@@ -27,7 +28,8 @@ export function AnaserLayout() {
   const navigate = useNavigate()
 
   const initials = user ? `${user.firstName[0] ?? ''}${user.lastName[0] ?? ''}`.toUpperCase() : ''
-  const pendingRetours = ANASER_RETOURS.filter((r) => r.statut === 'nouveau' || r.statut === 'en_cours').length
+  const { donnees: retours } = useEnDirect(chargerRetours, 60_000)
+  const pendingRetours = (retours ?? []).filter((r) => r.statut === 'nouveau' || r.statut === 'en_cours').length
 
   return (
     <DashboardLayout
