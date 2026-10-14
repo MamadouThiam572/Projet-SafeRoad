@@ -24,7 +24,8 @@
 
 import { INITIAL_BOITIERS, INITIAL_CONDUCTEURS } from '@/data/superAdminBoitiers'
 import { RECENT_DAYS, REGION_SERIES, REGION_STATS, SERIES_DATES, SERIES_DAYS } from '@/data/superAdminHome'
-import { INITIAL_INCIDENTS, LOCALITIES, type Incident } from '@/data/superAdminIncidents'
+import { conducteursIncidents, INITIAL_INCIDENTS, LOCALITIES, type Incident } from '@/data/superAdminIncidents'
+import type { SignalementApi } from '@/lib/api'
 
 export type DangerType = 'nid_de_poule' | 'chaussee_degradee' | 'signalisation_absente' | 'chaussee_inondee' | 'obstacle' | 'autre'
 export type SigStatut = 'a_verifier' | 'en_verification' | 'valide' | 'rejete'
@@ -76,6 +77,8 @@ export interface Signalement {
   /** Boîtier du conducteur, s'il en a un. */
   boitierId: string | null
   description: string
+  /** Adresse protégée de la photo (données réelles) : chargée avec le jeton, jamais publique. */
+  photoUrl?: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,6 +285,17 @@ for (const i of INITIAL_INCIDENTS) {
   else incidentsByRegion.set(i.region, [i])
 }
 
+/** Remplace les incidents de recoupement par les incidents réels des boîtiers (page Signalements). */
+export function definirIncidentsDeRecoupement(incidents: Incident[]) {
+  incidentsByRegion.clear()
+  nearbyCache.clear()
+  for (const i of incidents) {
+    const list = incidentsByRegion.get(i.region)
+    if (list) list.push(i)
+    else incidentsByRegion.set(i.region, [i])
+  }
+}
+
 function distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6_371_000
   const toRad = (d: number) => (d * Math.PI) / 180
@@ -354,4 +368,40 @@ export function baseHistory(s: Signalement): SigHistoryItem[] {
   if (s.statut === 'valide') items.push({ at: stamp(o2), text: 'Événements à proximité consultés' }, { at: stamp(o2 + 6), text: 'Statut → Validé' })
   else items.push({ at: stamp(o2), text: `Motif : ${REJECT_REASONS[s.num % REJECT_REASONS.length]}` }, { at: stamp(o2 + 2), text: 'Statut → Rejeté' })
   return items
+}
+
+/* ------------------------------------------------------------------ */
+/* Données réelles du backend (GET /signalements/)                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Signalement du backend -> ligne de la page (même forme que la démonstration). Le jour est
+ * repéré dans les 90 jours de SERIES_DATES ; un signalement plus ancien est écarté (null).
+ * Le conducteur est ajouté au registre des conducteurs s'il n'y est pas déjà.
+ */
+export function signalementNationalDepuisApi(a: SignalementApi): Signalement | null {
+  const iso = new Date(a.date_creation).toISOString()
+  const day = SERIES_DATES.indexOf(iso.slice(0, 10))
+  if (day < 0) return null
+  if (a.conducteur && !conducteursIncidents.has(a.conducteur)) {
+    conducteursIncidents.set(a.conducteur, {
+      id: a.conducteur, name: a.conducteur_nom ?? 'Conducteur', region: a.region, plate: 'véhicule non renseigné',
+    })
+  }
+  return {
+    id: `SIG-${String(a.id).padStart(2, '0')}`,
+    num: a.id,
+    region: a.region,
+    locality: a.localite || a.region_libelle,
+    type: a.type_danger,
+    statut: a.statut,
+    day,
+    minute: Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+    lat: a.latitude,
+    lng: a.longitude,
+    conducteurId: a.conducteur ?? '',
+    boitierId: a.boitier ? `SR-${a.boitier.slice(0, 8).toUpperCase()}` : null,
+    description: a.description || 'Aucune description.',
+    photoUrl: a.photo_url,
+  }
 }

@@ -1,29 +1,37 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useAuth } from '@/context/AuthContext'
 import { REGION_STATS, SERIES_DATES, SERIES_DAYS } from '@/data/superAdminHome'
-import { driverById, driverExtras, incidentDate, incidentTime } from '@/data/superAdminIncidents'
+import {
+  conducteursIncidents as driverById,
+  extrasConducteur as driverExtras,
+  incidentDate,
+  incidentNationalDepuisApi,
+  incidentTime,
+  type Incident,
+} from '@/data/superAdminIncidents'
 import {
   CORRESPONDANCE_META,
   DANGER_META,
   DANGER_ORDER,
-  INITIAL_SIGNALEMENTS,
+  definirIncidentsDeRecoupement,
   NEARBY_DAYS,
   NEARBY_RADIUS_M,
   SIG_STATUT_META,
   SIG_STATUT_ORDER,
-  baseHistory,
   correspondanceOf,
   nearbyIncidents,
   sigDate,
+  signalementNationalDepuisApi,
   sigTime,
   type DangerType,
   type SigHistoryItem,
   type SigStatut,
   type Signalement,
 } from '@/data/superAdminSignalements'
+import { useEnDirect } from '@/hooks/useEnDirect'
+import { ApiError, changerStatutSignalement, chargerPhotoSignalement, getHistoriqueSignalement, getIncidents, getSignalements } from '@/lib/api'
 import { REGION_CENTERS } from '@/lib/regions'
 import { PATHS } from '@/routes/paths'
 
@@ -36,9 +44,13 @@ import { PATHS } from '@/routes/paths'
  * pas été vérifié. Les événements « à proximité » sont de vrais incidents de la
  * page Incidents, qui servent à recouper la déclaration.
  *
- * Données de démonstration ; les changements de statut sont locaux
- * (// TODO backend).
+ * Données réelles du backend (signalements et incidents des 90 derniers jours) ; les
+ * décisions sont enregistrées (PATCH /signalements/{id}/statut/) avec leur motif, et
+ * l'historique vient de GET /signalements/{id}/historique/.
  */
+
+/** Signalements nationaux + incidents des boîtiers qui servent à les recouper. */
+const chargerDonnees = () => Promise.all([getSignalements(), getIncidents(2000)])
 
 type Periode = 'aujourdhui' | '7j' | '30j' | '3m' | 'perso'
 type DateFilter = 'tous' | 'aujourdhui' | '7j' | '30j'
@@ -67,14 +79,14 @@ const regionName = (slug: string) => REGION_STATS.find((r) => r.slug === slug)?.
 
 const p2 = (n: number) => String(n).padStart(2, '0')
 
-function formatNow(): string {
-  const d = new Date()
+function formatNow(instant = Date.now()): string {
+  const d = new Date(instant)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
-/** Horodatage court d'une action faite maintenant dans la page : JJ/MM HH:mm. */
-function stampNow(): string {
-  const d = new Date()
+/** Horodatage court d'une entrée d'historique : JJ/MM HH:mm. */
+function stamp(iso: string): string {
+  const d = new Date(iso)
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`
 }
 
@@ -231,9 +243,10 @@ interface DetailProps {
   onMenu: (e: ReactMouseEvent<HTMLButtonElement>) => void
   onAction: (preset: SigStatut) => void
   onLocate: () => void
+  onPhoto: () => void
 }
 
-function DetailPanel({ s, statut, history, menuOpen, onClose, onMenu, onAction, onLocate }: DetailProps) {
+function DetailPanel({ s, statut, history, menuOpen, onClose, onMenu, onAction, onLocate, onPhoto }: DetailProps) {
   const meta = DANGER_META[s.type]
   const driver = driverById.get(s.conducteurId)
   const extras = driverExtras(s.conducteurId)
@@ -320,6 +333,15 @@ function DetailPanel({ s, statut, history, menuOpen, onClose, onMenu, onAction, 
           <button type="button" onClick={onLocate} className="text-info-600 hover:underline" title="Voir sur la carte">
             {s.lat.toFixed(4)} / {s.lng.toFixed(4)}
           </button>
+        </InfoRow>
+        <InfoRow icon="photo_camera" label="Photo">
+          {s.photoUrl ? (
+            <button type="button" onClick={onPhoto} className="text-info-600 hover:underline">
+              Voir la photo
+            </button>
+          ) : (
+            <span className="font-medium text-faint">Aucune photo jointe</span>
+          )}
         </InfoRow>
       </Section>
 
@@ -501,15 +523,20 @@ interface RowMenu {
   up: boolean
 }
 
-interface Override {
-  statut: SigStatut
-  extra: SigHistoryItem[]
-}
-
 export function SignalementsPage() {
-  const { user } = useAuth()
-  const signalements = INITIAL_SIGNALEMENTS
-  const [lastRefresh, setLastRefresh] = useState(() => formatNow())
+  // Données réelles, rechargées toutes les 30 s.
+  const { donnees, erreur, maj, recharger } = useEnDirect(chargerDonnees, 30_000)
+  const signalements = useMemo(() => {
+    const [sigs, incs] = donnees ?? [[], []]
+    // Les incidents réels servent au recoupement « à proximité » (même rayon et même fenêtre qu'avant).
+    definirIncidentsDeRecoupement(incs.map(incidentNationalDepuisApi).filter((i): i is Incident => i !== null))
+    return sigs
+      .map(signalementNationalDepuisApi)
+      .filter((s): s is Signalement => s !== null)
+      .sort((a, b) => a.day - b.day || a.minute - b.minute || a.num - b.num)
+  }, [donnees])
+  const lastRefresh = formatNow(maj)
+  const [historiques, setHistoriques] = useState<Record<string, SigHistoryItem[]>>({})
   const [refreshing, setRefreshing] = useState(false)
 
   const [region, setRegion] = useState<'toutes' | string>('toutes')
@@ -524,7 +551,6 @@ export function SignalementsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
 
-  const [overrides, setOverrides] = useState<Record<string, Override>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [popupId, setPopupId] = useState<string | null>(null)
   const [focus, setFocus] = useState<Focus>(NATIONAL_FOCUS)
@@ -534,9 +560,7 @@ export function SignalementsPage() {
   const mapRef = useRef<HTMLElement | null>(null)
   const popupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const actor = user ? `Super Admin : ${user.firstName[0] ?? ''}. ${user.lastName}` : 'Super Admin'
-
-  const statutOf = (s: Signalement): SigStatut => overrides[s.id]?.statut ?? s.statut
+  const statutOf = (s: Signalement): SigStatut => s.statut
 
   const byId = useMemo(() => new Map(signalements.map((s) => [s.id, s])), [signalements])
 
@@ -571,20 +595,20 @@ export function SignalementsPage() {
     let enVerif = 0
     let valides = 0
     for (const s of scoped) {
-      const st = overrides[s.id]?.statut ?? s.statut
+      const st = s.statut
       if (st === 'a_verifier') aVerifier++
       else if (st === 'en_verification') enVerif++
       else if (st === 'valide') valides++
     }
     return { total: scoped.length, aVerifier, enVerif, valides }
-  }, [scoped, overrides])
+  }, [scoped])
 
   /** Applique les filtres, sauf (au choix) celui des types ou celui des statuts : sert aux compteurs des cases à cocher. */
   const applyFilters = (skip: 'type' | 'statut' | null) => {
     const q = search.trim().toLowerCase()
     const minDay = dateF === 'tous' ? 0 : SERIES_DAYS - DATE_FILTER_DAYS[dateF]
     return scoped.filter((s) => {
-      const st = overrides[s.id]?.statut ?? s.statut
+      const st = s.statut
       if (s.day < minDay) return false
       if (skip !== 'type' && !typesOn.has(s.type)) return false
       if (skip !== 'statut' && !statutsOn.has(st)) return false
@@ -605,29 +629,29 @@ export function SignalementsPage() {
     const rows = applyFilters(null)
     return rows.sort((a, b) => (sortDir === 'asc' ? 1 : -1) * (a.num - b.num))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scoped, overrides, search, typesOn, statutsOn, dateF, sortDir])
+  }, [scoped, search, typesOn, statutsOn, dateF, sortDir])
 
   const typeCounts = useMemo(() => {
     const c = Object.fromEntries(DANGER_ORDER.map((t) => [t, 0])) as Record<DangerType, number>
     for (const s of applyFilters('type')) c[s.type]++
     return c
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scoped, overrides, search, statutsOn, dateF])
+  }, [scoped, search, statutsOn, dateF])
 
   const statutCounts = useMemo(() => {
     const c = Object.fromEntries(SIG_STATUT_ORDER.map((t) => [t, 0])) as Record<SigStatut, number>
-    for (const s of applyFilters('statut')) c[overrides[s.id]?.statut ?? s.statut]++
+    for (const s of applyFilters('statut')) c[s.statut]++
     return c
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scoped, overrides, search, typesOn, dateF])
+  }, [scoped, search, typesOn, dateF])
 
   /** Points de la carte : d'abord les signalements à traiter, puis les plus récents. */
   const mapItems = useMemo(() => {
-    const rank = (s: Signalement) => SIG_STATUT_ORDER.indexOf(overrides[s.id]?.statut ?? s.statut)
+    const rank = (s: Signalement) => SIG_STATUT_ORDER.indexOf(s.statut)
     const ranked = filtered.length <= MAP_LIMIT ? [...filtered] : [...filtered].sort((a, b) => rank(a) - rank(b) || b.num - a.num).slice(0, MAP_LIMIT)
     // Les signalements à traiter sont dessinés en dernier, donc au-dessus.
     return ranked.sort((a, b) => rank(b) - rank(a))
-  }, [filtered, overrides])
+  }, [filtered])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -642,7 +666,28 @@ export function SignalementsPage() {
   const menuSig = menu ? (byId.get(menu.id) ?? null) : null
   const modalSig = statusModal ? (byId.get(statusModal.id) ?? null) : null
 
-  const historyOf = (s: Signalement): SigHistoryItem[] => [...baseHistory(s), ...(overrides[s.id]?.extra ?? [])]
+  const historyOf = (s: Signalement): SigHistoryItem[] => [
+    { at: sigTime(s), text: 'Signalement envoyé par le conducteur depuis son espace' },
+    ...(historiques[s.id] ?? []),
+  ]
+
+  // Historique réel (décisions motivées) du signalement ouvert.
+  const ouvert = selectedId ? (byId.get(selectedId) ?? null) : null
+  const ouvertNum = ouvert?.num ?? null
+  const ouvertId = ouvert?.id ?? null
+  const chargerHistorique = useCallback(async (num: number, id: string) => {
+    const lignes = await getHistoriqueSignalement(num).catch(() => [])
+    setHistoriques((prev) => ({
+      ...prev,
+      [id]: lignes.map((h) => ({
+        at: stamp(h.date),
+        text: `Statut → ${h.statut_nouveau_libelle}${h.commentaire ? ` : « ${h.commentaire} »` : ''} (${h.acteur_nom ?? 'compte supprimé'})`,
+      })),
+    }))
+  }, [])
+  useEffect(() => {
+    if (ouvertNum !== null && ouvertId) void chargerHistorique(ouvertNum, ouvertId)
+  }, [ouvertNum, ouvertId, maj, chargerHistorique])
 
   /* --- Effets ----------------------------------------------------------- */
 
@@ -755,21 +800,36 @@ export function SignalementsPage() {
   }
 
   const refresh = () => {
-    // TODO backend : recharger la liste, les compteurs et la carte
-    setLastRefresh(formatNow())
+    void recharger()
     setRefreshing(true)
     setToast('Données actualisées.')
   }
 
-  const saveStatus = (s: Signalement, statut: SigStatut, note: string) => {
-    // TODO backend : PATCH du statut du signalement + ajout d'une observation / d'un motif de rejet
-    const current = overrides[s.id]?.statut ?? s.statut
-    const extra: SigHistoryItem[] = []
-    if (statut !== current) extra.push({ at: stampNow(), text: `Statut → ${SIG_STATUT_META[statut].label} (${actor})` })
-    if (note) extra.push({ at: stampNow(), text: `${statut === 'rejete' && statut !== current ? 'Motif' : 'Observation'} : « ${note} » (${actor})` })
-    setOverrides((prev) => ({ ...prev, [s.id]: { statut, extra: [...(prev[s.id]?.extra ?? []), ...extra] } }))
-    setStatusModal(null)
-    setToast(statut !== current ? `${s.id} : « ${SIG_STATUT_META[statut].label} ».` : 'Observation ajoutée.')
+  /** Décision enregistrée par le backend (rôle, transition et motif de rejet vérifiés). */
+  const saveStatus = async (s: Signalement, statut: SigStatut, note: string) => {
+    if (statut === s.statut) {
+      setToast("Choisissez un nouveau statut : l'observation est enregistrée avec la décision.")
+      return
+    }
+    try {
+      await changerStatutSignalement(s.num, statut, note)
+      setStatusModal(null)
+      setToast(`${s.id} : « ${SIG_STATUT_META[statut].label} ».`)
+      await recharger()
+      await chargerHistorique(s.num, s.id)
+    } catch (err) {
+      setToast(err instanceof ApiError ? err.message : 'Décision non enregistrée : serveur injoignable.')
+    }
+  }
+
+  /** Photo protégée du signalement, ouverte dans un nouvel onglet. */
+  const voirPhoto = async (s: Signalement) => {
+    if (!s.photoUrl) return
+    try {
+      window.open(await chargerPhotoSignalement(s.photoUrl), '_blank', 'noopener')
+    } catch {
+      setToast('Photo indisponible pour le moment.')
+    }
   }
 
   /** Les cartes de synthèse servent aussi de raccourcis de filtre. */
@@ -917,6 +977,7 @@ export function SignalementsPage() {
             </div>
           )}
           <p className="m-0 text-[10.5px] font-medium text-faint">Dernière mise à jour : {lastRefresh}</p>
+          {erreur && <p className="m-0 text-[10.5px] font-semibold text-danger-600">{erreur}</p>}
         </div>
       </section>
 
@@ -1048,7 +1109,7 @@ export function SignalementsPage() {
                       key={s.id}
                       center={[s.lat, s.lng]}
                       radius={sel ? 10 : 7}
-                      pathOptions={{ color: sel ? '#073B4C' : '#fff', weight: sel ? 3 : 1.5, fillColor: SIG_STATUT_META[overrides[s.id]?.statut ?? s.statut].color, fillOpacity: 0.92 }}
+                      pathOptions={{ color: sel ? '#073B4C' : '#fff', weight: sel ? 3 : 1.5, fillColor: SIG_STATUT_META[s.statut].color, fillOpacity: 0.92 }}
                       eventHandlers={{
                         click: () => {
                           if (popupTimer.current) clearTimeout(popupTimer.current)
@@ -1281,6 +1342,7 @@ export function SignalementsPage() {
                 setSelectedId(null)
                 locate(selected, true)
               }}
+              onPhoto={() => void voirPhoto(selected)}
             />
           </aside>
         </div>

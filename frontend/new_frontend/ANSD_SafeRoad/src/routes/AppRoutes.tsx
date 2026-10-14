@@ -13,6 +13,7 @@ import { IncidentsPage as AdminIncidentsPage } from '@/pages/admin/IncidentsPage
 import { IncidentsPage as SuperAdminIncidentsPage } from '@/pages/superadmin/IncidentsPage'
 import { MonitoringPage as AdminMonitoringPage } from '@/pages/admin/MonitoringPage'
 import { SignalementsPage as AdminSignalementsPage } from '@/pages/admin/SignalementsPage'
+import { SignalementsPage as SuperAdminSignalementsPage } from '@/pages/superadmin/SignalementsPage'
 import { ZonesPage as AdminZonesPage } from '@/pages/admin/ZonesPage'
 import { DemandesPage } from '@/pages/admin/DemandesPage'
 import { MessagesPage } from '@/pages/superadmin/MessagesPage'
@@ -123,8 +124,7 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.boitiers} element={<SuperAdminBoitiersPage />} />
           <Route path={PATHS.superAdmin.monitoring} element={<SuperAdminMonitoringPage />} />
           <Route path={PATHS.superAdmin.incidents} element={<SuperAdminIncidentsPage />} />
-          {/* Vue réelle commune ; la page détaillée pages/superadmin/SignalementsPage.tsx est mise de côté. */}
-          <Route path={PATHS.superAdmin.signalements} element={<AdminSignalementsPage national />} />
+          <Route path={PATHS.superAdmin.signalements} element={<SuperAdminSignalementsPage />} />
           {/* Vue réelle commune (validation, archivage, recalcul). La page détaillée pages/superadmin/ZonesPage.tsx
               est mise de côté jusqu'à ce que le backend expose les incidents et signalements d'une zone. */}
           <Route path={PATHS.superAdmin.zones} element={<AdminZonesPage national />} />
