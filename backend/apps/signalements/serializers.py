@@ -46,13 +46,15 @@ class SignalementSerializer(serializers.ModelSerializer):
     statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
     region_libelle = serializers.CharField(source='get_region_display', read_only=True)
     conducteur_nom = serializers.SerializerMethodField()
+    conducteur_telephone = serializers.CharField(source='conducteur.telephone', read_only=True, default=None)
+    immatriculation = serializers.CharField(source='boitier.numero_immatriculation', read_only=True, default=None)
     # Adresse protégée de la photo (jamais l'URL du fichier) : voir SignalementViewSet.photo.
     photo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Signalement
         fields = [
-            'id', 'conducteur', 'conducteur_nom', 'boitier',
+            'id', 'conducteur', 'conducteur_nom', 'conducteur_telephone', 'boitier', 'immatriculation',
             'type_danger', 'type_danger_libelle', 'description',
             'latitude', 'longitude', 'precision_metres', 'region', 'region_libelle', 'localite',
             'photo_url', 'statut', 'statut_libelle', 'date_creation', 'date_maj',
@@ -74,7 +76,7 @@ class SignalementAnaserSerializer(SignalementSerializer):
     """ANASER analyse les dangers signalés, sans données permettant d'identifier le conducteur."""
 
     class Meta(SignalementSerializer.Meta):
-        fields = [f for f in SignalementSerializer.Meta.fields if f not in ('conducteur', 'conducteur_nom')]
+        fields = [f for f in SignalementSerializer.Meta.fields if f not in ('conducteur', 'conducteur_nom', 'conducteur_telephone')]
         read_only_fields = fields
 
 
