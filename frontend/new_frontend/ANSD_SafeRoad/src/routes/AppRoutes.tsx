@@ -18,6 +18,7 @@ import { ZonesPage as AdminZonesPage } from '@/pages/admin/ZonesPage'
 import { ZonesPage as SuperAdminZonesPage } from '@/pages/superadmin/ZonesPage'
 import { DemandesPage } from '@/pages/admin/DemandesPage'
 import { MessagesPage } from '@/pages/superadmin/MessagesPage'
+import { StatistiquesPage } from '@/pages/superadmin/StatistiquesPage'
 import { DashboardPage as AnaserDashboardPage } from '@/pages/anaser/DashboardPage'
 import { ProfilPage as AnaserProfilPage } from '@/pages/anaser/ProfilPage'
 import { RetoursPage as AnaserRetoursPage } from '@/pages/anaser/RetoursPage'
@@ -129,7 +130,7 @@ export function AppRoutes() {
           <Route path={PATHS.superAdmin.demandes} element={<DemandesPage national />} />
           <Route path={PATHS.superAdmin.messages} element={<MessagesPage />} />
           <Route path={PATHS.superAdmin.profil} element={<AnaserProfilPage />} />
-          <Route path={PATHS.superAdmin.statistiques} element={<PageStub title="Statistiques" />} />
+          <Route path={PATHS.superAdmin.statistiques} element={<StatistiquesPage />} />
           <Route path={PATHS.superAdmin.notifications} element={<PageStub title="Notifications" />} />
           <Route path={PATHS.superAdmin.rapports} element={<PageStub title="Rapports" />} />
           <Route path={PATHS.superAdmin.configuration} element={<PageStub title="Configuration" />} />

@@ -834,6 +834,41 @@ export function traiterMessageContact(id: number): Promise<MessageContactApi> {
 }
 
 // ---------------------------------------------------------------------------
+// Statistiques détaillées (page Statistiques) : périmètre du compte, ?jours=, ?region=, ?zone=.
+// ---------------------------------------------------------------------------
+
+export interface RepartitionApi {
+  cle: string
+  libelle: string
+  nombre: number
+  pourcentage: number
+}
+
+export interface StatistiquesDetailleesApi {
+  perimetre: { national: boolean; region: string | null; jours: number; zone: string | null }
+  indicateurs: { incidents: number; signalements: number; alertes: number; evenements: number; zones: number }
+  series: { date: string; incidents: number; signalements: number }[]
+  incidents_par_type: RepartitionApi[]
+  signalements_par_type: RepartitionApi[]
+  zones_par_statut: RepartitionApi[]
+  zones_actives: { id: number; nom: string; region: string | null; region_libelle: string | null; incidents: number; signalements: number; niveau_danger: string }[]
+  par_region: { region: string; libelle: string; incidents: number; signalements: number; alertes: number; zones: number; evenements: number }[]
+  localites: { id: number; nom: string; region: string | null }[]
+  carte: {
+    incidents: { latitude: number; longitude: number; niveau_gravite: 'faible' | 'moyen' | 'critique' }[]
+    signalements: { latitude: number; longitude: number }[]
+    zones: { latitude_centre: number; longitude_centre: number; niveau_danger: 'normale' | 'vigilance' | 'critique'; nom: string; id: number }[]
+  }
+}
+
+export function getStatistiquesDetaillees(jours: number, region?: string, zone?: string): Promise<StatistiquesDetailleesApi> {
+  const params = new URLSearchParams({ jours: String(jours) })
+  if (region) params.set('region', region)
+  if (zone) params.set('zone', zone)
+  return authorizedFetch(`/statistiques/detaillees/?${params}`)
+}
+
+// ---------------------------------------------------------------------------
 // Tableaux de bord (GET /tableau-de-bord/) : chiffres calculés en direct par le backend, selon
 // le rôle (admin régional = sa région ; super admin et ANASER = national + détail par région).
 // ---------------------------------------------------------------------------
